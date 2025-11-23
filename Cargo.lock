@@ -10,7 +10,7 @@ checksum = "1d7a4e1a13a692e99988751991e9c3349c5363c8b198785e65ce2d2a375f0707"
 
 [[package]]
 name = "redstr-server"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "redstr",
 ]
