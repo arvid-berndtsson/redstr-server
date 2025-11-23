@@ -1,0 +1,206 @@
+# redstr-server
+
+A simple HTTP API server for [redstr](https://github.com/arvid-berndtsson/redstr) string transformations. This server provides a REST API that allows external tools to use redstr's transformation functions over HTTP.
+
+## Features
+
+- Zero-dependency HTTP server (uses only Rust standard library)
+- REST API with JSON request/response
+- CORS enabled for browser access
+- Simple request/response format
+- Thread-per-connection model
+
+## Prerequisites
+
+- Rust 1.70+ installed
+- Access to the [redstr](https://github.com/arvid-berndtsson/redstr) core library (as a dependency)
+
+## Installation
+
+```bash
+git clone https://github.com/arvid-berndtsson/redstr-server.git
+cd redstr-server
+cargo build --release
+```
+
+The binary will be available at `target/release/redstr-serve`.
+
+## Usage
+
+Start the server:
+
+```bash
+cargo run --release
+```
+
+Or run the compiled binary:
+
+```bash
+./target/release/redstr-serve
+```
+
+The server will listen on `http://127.0.0.1:8080` by default.
+
+## API Endpoints
+
+### GET /
+
+Returns server information and available endpoints.
+
+**Response:**
+```json
+{
+  "service": "redstr",
+  "version": "0.2.0",
+  "endpoints": ["/transform", "/health"]
+}
+```
+
+### GET /health
+
+Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "healthy"
+}
+```
+
+### POST /transform
+
+Transform a string using a redstr function.
+
+**Request:**
+```json
+{
+  "function": "leetspeak",
+  "input": "Hello World"
+}
+```
+
+**Response:**
+```json
+{
+  "output": "H3ll0 W0rld"
+}
+```
+
+**Error Response:**
+```json
+{
+  "error": "Unknown function: invalid_function"
+}
+```
+
+## Available Functions
+
+See the [redstr documentation](https://github.com/arvid-berndtsson/redstr) for a complete list of available transformation functions. All redstr functions are available via the API.
+
+## Example Usage
+
+### Using curl
+
+```bash
+# Basic transformation
+curl -X POST http://localhost:8080/transform \
+  -H "Content-Type: application/json" \
+  -d '{"function":"leetspeak","input":"password"}'
+
+# SQL injection pattern
+curl -X POST http://localhost:8080/transform \
+  -H "Content-Type: application/json" \
+  -d '{"function":"sql_comment_injection","input":"SELECT * FROM users"}'
+
+# Domain typosquatting
+curl -X POST http://localhost:8080/transform \
+  -H "Content-Type: application/json" \
+  -d '{"function":"domain_typosquat","input":"example.com"}'
+```
+
+### Using Python
+
+```python
+import requests
+
+url = "http://localhost:8080/transform"
+payload = {
+    "function": "xss_tag_variations",
+    "input": "<script>alert('XSS')</script>"
+}
+
+response = requests.post(url, json=payload)
+print(response.json()["output"])
+```
+
+### Using JavaScript
+
+```javascript
+fetch('http://localhost:8080/transform', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    function: 'base64_encode',
+    input: 'Hello World'
+  })
+})
+.then(res => res.json())
+.then(data => console.log(data.output));
+```
+
+## Integration with External Tools
+
+This HTTP server is designed to be used as a bridge between redstr and external security testing tools:
+
+- **EvilJinx**: Use for domain generation and email obfuscation
+- **Caido**: Create plugins that call this API for transformations
+- **Burp Suite**: Build extensions that interface with this server
+- **OWASP ZAP**: Create add-ons that use this API
+- **Custom Tools**: Any tool that can make HTTP requests
+
+## Security Considerations
+
+- The server binds to localhost (127.0.0.1) by default for security
+- No authentication is implemented - add your own if exposing to network
+- Designed for local use and authorized security testing only
+- Log all transformation requests for audit purposes
+
+## Performance
+
+- Thread-per-connection model
+- Synchronous I/O (suitable for moderate load)
+- No external dependencies
+- Minimal memory footprint
+
+For high-performance scenarios, consider using an async runtime like Tokio.
+
+## Troubleshooting
+
+**Port already in use:**
+```
+Error: Address already in use (os error 98)
+```
+Solution: Change the port in `main.rs` or kill the process using port 8080.
+
+**Connection refused:**
+Ensure the server is running and accessible at the configured address.
+
+## Future Enhancements
+
+- [ ] Configuration file support
+- [ ] Custom port binding
+- [ ] Authentication/authorization
+- [ ] Rate limiting
+- [ ] Request logging
+- [ ] Metrics endpoint
+- [ ] Async I/O with Tokio
+- [ ] TLS support
+
+## License
+
+MIT License - See LICENSE file in the repository root.
+
+---
+
+**Important:** This server is designed for authorized security testing only. Users must obtain proper authorization before conducting any security assessments.
+

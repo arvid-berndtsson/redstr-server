@@ -1,0 +1,22 @@
+[package]
+name = "redstr-server"
+version = "0.1.0"
+edition = "2021"
+authors = ["Arvid Berndtsson <dev@arvid.tech>"]
+description = "HTTP API server for redstr string transformations"
+license = "MIT"
+repository = "https://github.com/arvid-berndtsson/redstr-server"
+homepage = "https://github.com/arvid-berndtsson/redstr-server"
+keywords = ["red-team", "security", "http-server", "api", "redstr"]
+categories = ["development-tools", "web-programming"]
+readme = "README.md"
+
+[[bin]]
+name = "redstr-serve"
+path = "src/main.rs"
+
+[dependencies]
+# Use git dependency until redstr is published to crates.io
+# Once published, change to: redstr = { version = "0.2" }
+redstr = { git = "https://github.com/arvid-berndtsson/redstr.git" }
+
