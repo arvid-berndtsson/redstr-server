@@ -16,5 +16,5 @@ name = "redstr-server"
 path = "src/main.rs"
 
 [dependencies]
-redstr = "0.2.0"
+redstr = "^0.2.0"
 
