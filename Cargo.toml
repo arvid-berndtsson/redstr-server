@@ -16,7 +16,5 @@ name = "redstr-serve"
 path = "src/main.rs"
 
 [dependencies]
-# Use git dependency until redstr is published to crates.io
-# Once published, change to: redstr = { version = "0.2" }
-redstr = { git = "https://github.com/arvid-berndtsson/redstr.git" }
+redstr = "0.2.0"
 
