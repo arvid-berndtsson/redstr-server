@@ -222,7 +222,7 @@ fn test_transform_random_user_agent() {
     let response_body = extract_body(&response);
     assert!(response_body.contains(r#""output""#));
     // User agent should not be empty
-    assert!(!response_body.contains(r#""output":""}#));
+    assert!(!response_body.contains(r#""output":""}"#));
 }
 
 #[test]
