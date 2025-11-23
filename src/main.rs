@@ -238,6 +238,8 @@ fn escape_json(s: &str) -> String {
 
 fn handle_functions(stream: &mut TcpStream) {
     // List all available transformation functions
+    // Note: This list must be kept in sync with parse_and_transform function
+    // Consider using a macro or shared constant in future to avoid duplication
     let functions = vec![
         // Case transformations
         "randomize_capitalization", "leetspeak", "alternate_case", "case_swap",
@@ -307,14 +309,18 @@ fn parse_and_batch_transform(json: &str) -> Result<Vec<String>, String> {
     // Simple batch processing - extract transforms array
     // Expected format: {"transforms":[{"function":"func1","input":"text1"},{"function":"func2","input":"text2"}]}
     
-    // Find the transforms array
-    let transforms_start = json.find(r#""transforms":"#)
+    // Find the transforms field (allowing for whitespace)
+    let transforms_pattern = r#""transforms""#;
+    let transforms_start = json.find(transforms_pattern)
         .ok_or("Missing 'transforms' field")?;
     
-    // Find the opening bracket of the array
-    let array_start = json[transforms_start..].find('[')
-        .map(|i| transforms_start + i + 1)
+    // Find the opening bracket of the array (skipping whitespace and colon)
+    let search_start = transforms_start + transforms_pattern.len();
+    let remaining = &json[search_start..];
+    let array_start_offset = remaining.chars()
+        .position(|c| c == '[')
         .ok_or("Invalid transforms array format")?;
+    let array_start = search_start + array_start_offset + 1;
     
     // Find matching closing bracket
     let array_end = json[array_start..].find(']')
@@ -323,7 +329,9 @@ fn parse_and_batch_transform(json: &str) -> Result<Vec<String>, String> {
     
     let transforms_json = &json[array_start..array_end];
     
-    // Split by objects (simple approach - look for },{)
+    // Split by objects (simple approach - tracks braces and strings)
+    // Note: This parser has limitations with complex nested structures
+    // For production use, consider using serde_json for proper JSON parsing
     let mut results = Vec::new();
     let mut current_start = 0;
     let mut brace_count = 0;
@@ -634,6 +642,17 @@ mod tests {
     fn test_extract_json_field_empty_string() {
         let json = r#"{"function":"test","input":""}"#;
         assert_eq!(extract_json_field(json, "input"), Some("".to_string()));
+    }
+
+    #[test]
+    fn test_parse_and_batch_transform_with_whitespace() {
+        // Test with whitespace after colon
+        let json = r#"{"transforms": [{"function":"reverse_string","input":"hello"}]}"#;
+        let result = parse_and_batch_transform(json);
+        assert!(result.is_ok());
+        let outputs = result.unwrap();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0], "olleh");
     }
 }
 
