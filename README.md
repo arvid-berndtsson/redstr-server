@@ -52,7 +52,7 @@ Returns server information and available endpoints.
 {
   "service": "redstr",
   "version": "0.2.0",
-  "endpoints": ["/transform", "/health"]
+  "endpoints": ["/transform", "/batch", "/functions", "/health", "/version"]
 }
 ```
 
@@ -64,6 +64,31 @@ Health check endpoint.
 ```json
 {
   "status": "healthy"
+}
+```
+
+### GET /version
+
+Get detailed version information.
+
+**Response:**
+```json
+{
+  "service": "redstr-server",
+  "version": "0.1.0",
+  "redstr_version": "0.2.0"
+}
+```
+
+### GET /functions
+
+List all available transformation functions.
+
+**Response:**
+```json
+{
+  "functions": ["leetspeak", "base64_encode", "url_encode", ...],
+  "count": 62
 }
 ```
 
@@ -93,6 +118,30 @@ Transform a string using a redstr function.
 }
 ```
 
+### POST /batch
+
+Transform multiple strings in a single request.
+
+**Request:**
+```json
+{
+  "transforms": [
+    {"function": "leetspeak", "input": "Hello"},
+    {"function": "base64_encode", "input": "World"}
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "results": [
+    {"output": "H3ll0"},
+    {"output": "V29ybGQ="}
+  ]
+}
+```
+
 ## Available Functions
 
 See the [redstr documentation](https://github.com/arvid-berndtsson/redstr) for a complete list of available transformation functions. All redstr functions are available via the API.
@@ -102,10 +151,24 @@ See the [redstr documentation](https://github.com/arvid-berndtsson/redstr) for a
 ### Using curl
 
 ```bash
+# List all available functions
+curl http://localhost:8080/functions
+
+# Check server health
+curl http://localhost:8080/health
+
+# Get version information
+curl http://localhost:8080/version
+
 # Basic transformation
 curl -X POST http://localhost:8080/transform \
   -H "Content-Type: application/json" \
   -d '{"function":"leetspeak","input":"password"}'
+
+# Batch transformations
+curl -X POST http://localhost:8080/batch \
+  -H "Content-Type: application/json" \
+  -d '{"transforms":[{"function":"leetspeak","input":"hello"},{"function":"base64_encode","input":"world"}]}'
 
 # SQL injection pattern
 curl -X POST http://localhost:8080/transform \
@@ -184,6 +247,30 @@ Solution: Change the port in `main.rs` or kill the process using port 8080.
 
 **Connection refused:**
 Ensure the server is running and accessible at the configured address.
+
+## Testing
+
+The project includes comprehensive unit and integration tests.
+
+### Run Unit Tests
+
+```bash
+cargo test --bin redstr-serve
+```
+
+### Run Integration Tests
+
+Integration tests require the server to be running. Start the server in one terminal:
+
+```bash
+cargo run --release
+```
+
+Then in another terminal, run the integration tests:
+
+```bash
+cargo test --test integration_tests -- --ignored
+```
 
 ## Future Enhancements
 
