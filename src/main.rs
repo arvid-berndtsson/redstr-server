@@ -196,6 +196,7 @@ fn extract_json_field(json: &str, field: &str) -> Option<String> {
     // Find the closing quote, accounting for escaped quotes
     let mut end = 0;
     let mut escaped = false;
+    let mut found_closing_quote = false;
     for (i, c) in remaining.chars().enumerate() {
         if escaped {
             escaped = false;
@@ -207,11 +208,13 @@ fn extract_json_field(json: &str, field: &str) -> Option<String> {
         }
         if c == '"' {
             end = i;
+            found_closing_quote = true;
             break;
         }
     }
     
-    if end == 0 && !remaining.is_empty() {
+    // Return None only if we didn't find a closing quote at all
+    if !found_closing_quote {
         return None;
     }
     
@@ -235,6 +238,206 @@ fn send_response(stream: &mut TcpStream, status: u16, status_text: &str, content
     
     if let Err(e) = stream.write_all(response.as_bytes()) {
         eprintln!("Failed to send response: {}", e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_json_field_basic() {
+        let json = r#"{"function":"leetspeak","input":"hello"}"#;
+        assert_eq!(extract_json_field(json, "function"), Some("leetspeak".to_string()));
+        assert_eq!(extract_json_field(json, "input"), Some("hello".to_string()));
+    }
+
+    #[test]
+    fn test_extract_json_field_with_escaped_quotes() {
+        let json = r#"{"function":"test","input":"hello \"world\""}"#;
+        assert_eq!(extract_json_field(json, "input"), Some("hello \"world\"".to_string()));
+    }
+
+    #[test]
+    fn test_extract_json_field_with_special_chars() {
+        let json = r#"{"function":"test","input":"line1\nline2\ttab"}"#;
+        let result = extract_json_field(json, "input");
+        assert_eq!(result, Some("line1\nline2\ttab".to_string()));
+    }
+
+    #[test]
+    fn test_extract_json_field_missing() {
+        let json = r#"{"function":"test"}"#;
+        assert_eq!(extract_json_field(json, "input"), None);
+    }
+
+    #[test]
+    fn test_escape_json_basic() {
+        assert_eq!(escape_json("hello"), "hello");
+    }
+
+    #[test]
+    fn test_escape_json_with_quotes() {
+        assert_eq!(escape_json("hello \"world\""), "hello \\\"world\\\"");
+    }
+
+    #[test]
+    fn test_escape_json_with_backslash() {
+        assert_eq!(escape_json("path\\to\\file"), "path\\\\to\\\\file");
+    }
+
+    #[test]
+    fn test_escape_json_with_newlines() {
+        assert_eq!(escape_json("line1\nline2"), "line1\\nline2");
+    }
+
+    #[test]
+    fn test_escape_json_with_tabs() {
+        assert_eq!(escape_json("col1\tcol2"), "col1\\tcol2");
+    }
+
+    #[test]
+    fn test_parse_and_transform_leetspeak() {
+        let json = r#"{"function":"leetspeak","input":"hello"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.contains("3") || output.contains("0")); // leetspeak converts e->3, o->0
+    }
+
+    #[test]
+    fn test_parse_and_transform_base64_encode() {
+        let json = r#"{"function":"base64_encode","input":"test"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "dGVzdA==");
+    }
+
+    #[test]
+    fn test_parse_and_transform_url_encode() {
+        let json = r#"{"function":"url_encode","input":"hello world"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "hello%20world");
+    }
+
+    #[test]
+    fn test_parse_and_transform_hex_encode() {
+        let json = r#"{"function":"hex_encode","input":"test"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "74657374");
+    }
+
+    #[test]
+    fn test_parse_and_transform_rot13() {
+        let json = r#"{"function":"rot13","input":"hello"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "uryyb");
+    }
+
+    #[test]
+    fn test_parse_and_transform_reverse_string() {
+        let json = r#"{"function":"reverse_string","input":"hello"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "olleh");
+    }
+
+    #[test]
+    fn test_parse_and_transform_to_snake_case() {
+        let json = r#"{"function":"to_snake_case","input":"HelloWorld"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "hello_world");
+    }
+
+    #[test]
+    fn test_parse_and_transform_to_camel_case() {
+        let json = r#"{"function":"to_camel_case","input":"hello_world"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "helloWorld");
+    }
+
+    #[test]
+    fn test_parse_and_transform_to_kebab_case() {
+        let json = r#"{"function":"to_kebab_case","input":"HelloWorld"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "hello-world");
+    }
+
+    #[test]
+    fn test_parse_and_transform_unknown_function() {
+        let json = r#"{"function":"unknown_func","input":"test"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown function"));
+    }
+
+    #[test]
+    fn test_parse_and_transform_missing_function() {
+        let json = r#"{"input":"test"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Missing 'function' field"));
+    }
+
+    #[test]
+    fn test_parse_and_transform_missing_input() {
+        let json = r#"{"function":"leetspeak"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Missing 'input' field"));
+    }
+
+    #[test]
+    fn test_parse_and_transform_case_swap() {
+        let json = r#"{"function":"case_swap","input":"Hello"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "heLlO");
+    }
+
+    #[test]
+    fn test_parse_and_transform_random_user_agent() {
+        let json = r#"{"function":"random_user_agent","input":""}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        let ua = result.unwrap();
+        assert!(!ua.is_empty());
+        // User agent should contain Mozilla
+        assert!(ua.contains("Mozilla"));
+    }
+
+    #[test]
+    fn test_parse_and_transform_html_entity_encode() {
+        let json = r#"{"function":"html_entity_encode","input":"<script>"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // The function uses hex entities like &#x3C; instead of &lt;
+        assert!(output.contains("&#"));
+    }
+
+    #[test]
+    fn test_parse_and_transform_sql_comment_injection() {
+        let json = r#"{"function":"sql_comment_injection","input":"admin"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        // Just verify it returns successfully, output may vary
+        assert!(!result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_and_transform_domain_typosquat() {
+        let json = r#"{"function":"domain_typosquat","input":"example.com"}"#;
+        let result = parse_and_transform(json);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(!output.is_empty());
     }
 }
 
