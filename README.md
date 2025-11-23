@@ -23,7 +23,7 @@ cd redstr-server
 cargo build --release
 ```
 
-The binary will be available at `target/release/redstr-serve`.
+The binary will be available at `target/release/redstr-server`.
 
 ## Usage
 
@@ -36,7 +36,7 @@ cargo run --release
 Or run the compiled binary:
 
 ```bash
-./target/release/redstr-serve
+./target/release/redstr-server
 ```
 
 The server will listen on `http://127.0.0.1:8080` by default.
@@ -255,7 +255,7 @@ The project includes comprehensive unit and integration tests.
 ### Run Unit Tests
 
 ```bash
-cargo test --bin redstr-serve
+cargo test --bin redstr-server
 ```
 
 ### Run Integration Tests

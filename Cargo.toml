@@ -12,7 +12,7 @@ categories = ["development-tools", "web-programming"]
 readme = "README.md"
 
 [[bin]]
-name = "redstr-serve"
+name = "redstr-server"
 path = "src/main.rs"
 
 [dependencies]

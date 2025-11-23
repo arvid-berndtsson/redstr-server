@@ -6,4 +6,5 @@ Cargo.lock
 .env
 .idea
 .vscode
+/bin
 
