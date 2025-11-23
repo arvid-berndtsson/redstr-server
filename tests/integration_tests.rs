@@ -234,3 +234,74 @@ fn test_multiple_sequential_requests() {
         assert!(response.contains("200 OK"), "Request {} failed", i);
     }
 }
+
+#[test]
+#[ignore] // Ignore by default as it requires server to be running
+fn test_functions_endpoint() {
+    let response = send_get_request("/functions");
+    assert!(response.contains("200 OK"));
+    let body = extract_body(&response);
+    assert!(body.contains(r#""functions""#));
+    assert!(body.contains(r#""count""#));
+    // Check for some known functions
+    assert!(body.contains("leetspeak"));
+    assert!(body.contains("base64_encode"));
+    assert!(body.contains("reverse_string"));
+}
+
+#[test]
+#[ignore] // Ignore by default as it requires server to be running
+fn test_version_endpoint() {
+    let response = send_get_request("/version");
+    assert!(response.contains("200 OK"));
+    let body = extract_body(&response);
+    assert!(body.contains(r#""service":"redstr-server""#));
+    assert!(body.contains(r#""version":"0.1.0""#));
+    assert!(body.contains(r#""redstr_version":"0.2.0""#));
+}
+
+#[test]
+#[ignore] // Ignore by default as it requires server to be running
+fn test_batch_transform_single() {
+    let body = r#"{"transforms":[{"function":"reverse_string","input":"hello"}]}"#;
+    let response = send_post_request("/batch", body);
+    assert!(response.contains("200 OK"));
+    let response_body = extract_body(&response);
+    assert!(response_body.contains(r#""results""#));
+    assert!(response_body.contains(r#""output":"olleh""#));
+}
+
+#[test]
+#[ignore] // Ignore by default as it requires server to be running
+fn test_batch_transform_multiple() {
+    let body = r#"{"transforms":[{"function":"reverse_string","input":"hello"},{"function":"rot13","input":"hello"}]}"#;
+    let response = send_post_request("/batch", body);
+    assert!(response.contains("200 OK"));
+    let response_body = extract_body(&response);
+    assert!(response_body.contains(r#""results""#));
+    assert!(response_body.contains(r#""output":"olleh""#));
+    assert!(response_body.contains(r#""output":"uryyb""#));
+}
+
+#[test]
+#[ignore] // Ignore by default as it requires server to be running
+fn test_batch_transform_empty() {
+    let body = r#"{"transforms":[]}"#;
+    let response = send_post_request("/batch", body);
+    assert!(response.contains("400 Bad Request"));
+    let response_body = extract_body(&response);
+    assert!(response_body.contains(r#""error""#));
+}
+
+#[test]
+#[ignore] // Ignore by default as it requires server to be running
+fn test_root_endpoint_has_all_endpoints() {
+    let response = send_get_request("/");
+    assert!(response.contains("200 OK"));
+    let body = extract_body(&response);
+    assert!(body.contains("/transform"));
+    assert!(body.contains("/batch"));
+    assert!(body.contains("/functions"));
+    assert!(body.contains("/health"));
+    assert!(body.contains("/version"));
+}
