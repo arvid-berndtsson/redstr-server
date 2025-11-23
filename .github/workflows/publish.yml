@@ -43,11 +43,7 @@ jobs:
             git config user.email "github-actions[bot]@users.noreply.github.com"
             
             # Commit and push the version update
-            git add Cargo.toml
-            # Add Cargo.lock only if it's not ignored (binary projects should commit it)
-            if ! git check-ignore -q Cargo.lock; then
-              git add Cargo.lock
-            fi
+            git add Cargo.toml Cargo.lock
             git commit -m "chore: bump version to $TAG_VERSION for release"
             git push origin ${{ github.event.repository.default_branch }}
             
@@ -59,7 +55,7 @@ jobs:
       - name: Build and test
         run: |
           cargo build --release
-          cargo test --bin redstr-serve
+          cargo test --bin redstr-server
 
       - name: Authenticate with crates.io
         uses: rust-lang/crates-io-auth-action@v1
