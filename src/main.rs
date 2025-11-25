@@ -73,12 +73,13 @@ struct FunctionsResponse {
 #[tokio::main]
 async fn main() {
     // Initialize tracing subscriber for structured logging
+    // Use JSON format for Railway compatibility with @attribute:value filtering
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "info,tower_http=debug,axum=debug".into()),
         )
-        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::fmt::layer().json())
         .init();
 
     info!("Starting redstr HTTP server");

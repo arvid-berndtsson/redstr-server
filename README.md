@@ -275,7 +275,30 @@ cargo test --test integration_tests -- --ignored
 
 ## Logging
 
-The server provides comprehensive structured logging using Rust's `tracing` framework with automatic request tracking and performance metrics.
+The server provides comprehensive structured logging in **JSON format** using Rust's `tracing` framework, fully compatible with [Railway's log filtering](https://docs.railway.com/guides/logs#filtering-logs).
+
+### Log Format
+
+All logs are output as JSON objects with structured fields for easy filtering and analysis:
+
+```json
+{
+  "timestamp": "2025-11-25T16:10:22.262009Z",
+  "level": "ERROR",
+  "fields": {
+    "message": "Transformation failed",
+    "function": "invalid",
+    "error": "Unknown function: invalid"
+  },
+  "target": "redstr_server",
+  "span": {
+    "method": "POST",
+    "uri": "/transform",
+    "version": "HTTP/1.1",
+    "name": "request"
+  }
+}
+```
 
 ### Log Levels
 
@@ -295,32 +318,42 @@ RUST_LOG=error cargo run
 RUST_LOG=debug cargo run
 ```
 
-### Example Logs
+### Railway Log Filtering
 
+Use Railway's powerful filtering syntax with the JSON log attributes:
+
+**Filter by log level:**
+- `@level:ERROR` - Show only errors
+- `@level:INFO` - Show info logs
+- `@level:DEBUG` - Show debug logs
+
+**Filter by custom fields:**
+- `@fields.function:leetspeak` - Show logs for specific transformation
+- `@fields.status:400` - Show specific status codes
+- `@fields.error:*` - Show all logs with error field
+- `@span.uri:/transform` - Show logs for specific endpoint
+- `@span.method:POST` - Show POST requests only
+
+**Combine filters:**
+- `@level:ERROR AND @span.uri:/transform` - Show errors on /transform endpoint
+- `@level:INFO AND @fields.function:*` - Show info logs with function field
+- `"Unknown function"` - Text search within log messages
+
+**Examples:**
 ```
-2025-11-25T15:55:19.161221Z DEBUG request{method=POST uri=/transform version=HTTP/1.1}: tower_http::trace::on_request: started processing request
-2025-11-25T15:55:19.161345Z  INFO request{method=POST uri=/transform version=HTTP/1.1}: redstr_server: Processing transformation request function=reverse_string
-2025-11-25T15:55:19.161389Z  INFO request{method=POST uri=/transform version=HTTP/1.1}: redstr_server: Transformation successful function=reverse_string
-2025-11-25T15:55:19.161443Z DEBUG request{method=POST uri=/transform version=HTTP/1.1}: tower_http::trace::on_response: finished processing request latency=0 ms status=200
+@level:ERROR                           # All errors
+@fields.function:reverse_string        # Specific function
+@span.uri:/batch                       # Batch endpoint logs
+@level:ERROR AND @span.uri:/transform  # Transform errors only
 ```
-
-### Filtering Logs in Railway
-
-Railway automatically integrates with Rust's tracing output. Search for:
-
-- `ERROR` - Show only errors
-- `status=400` - Show specific status codes
-- `uri=/transform` - Show logs for specific endpoint
-- `function=leetspeak` - Show logs for specific transformation
-- `"Unknown function"` - Search for specific error messages
 
 ### What Gets Logged
 
-✅ **Request Start** - Method, URI, HTTP version
-✅ **Request Processing** - Function name, operation details
-✅ **Request Completion** - Latency, status code
-✅ **Transformation Success** - Function name and confirmation
-✅ **All Errors** - Detailed error messages with context
+✅ **Request Start** - Method, URI, HTTP version  
+✅ **Request Processing** - Function name, operation details  
+✅ **Request Completion** - Latency, status code  
+✅ **Transformation Success** - Function name and confirmation  
+✅ **All Errors** - Detailed error messages with context  
 ✅ **Batch Operations** - Count of operations processed
 
 ## Technology Stack
