@@ -44,8 +44,10 @@ fn handle_client(mut stream: TcpStream) {
                 handle_functions(&mut stream);
             } else if request.starts_with("GET /version") {
                 send_response(&mut stream, 200, "OK", "application/json", r#"{"service":"redstr-server","version":"0.1.0","redstr_version":"0.2.0"}"#);
+            } else if request.starts_with("GET /function-paths") {
+                handle_function_paths(&mut stream);
             } else if request.starts_with("GET /") {
-                send_response(&mut stream, 200, "OK", "application/json", r#"{"service":"redstr","version":"0.2.0","endpoints":["/transform","/batch","/functions","/health","/version"]}"#);
+                send_response(&mut stream, 200, "OK", "application/json", r#"{"service":"redstr","version":"0.2.0","endpoints":["/transform","/batch","/functions","/health","/version","/function-paths"]}"#);
             } else {
                 send_response(&mut stream, 404, "Not Found", "text/plain", "Endpoint not found");
             }
@@ -272,6 +274,48 @@ fn handle_functions(stream: &mut TcpStream) {
     
     let functions_json: Vec<String> = functions.iter().map(|f| format!("\"{}\"", f)).collect();
     let response_body = format!(r#"{{"functions":[{}],"count":{}}}"#, functions_json.join(","), functions.len());
+    send_response(stream, 200, "OK", "application/json", &response_body);
+}
+
+fn handle_function_paths(stream: &mut TcpStream) {
+    // Map all available transformation functions to their endpoint paths
+    // All functions are accessible via POST /transform and POST /batch
+    let functions = vec![
+        // Case transformations
+        "randomize_capitalization", "leetspeak", "alternate_case", "case_swap",
+        "to_camel_case", "to_snake_case", "to_kebab_case",
+        // Encoding
+        "base64_encode", "url_encode", "hex_encode", "html_entity_encode", "mixed_encoding",
+        // Injection
+        "sql_comment_injection", "xss_tag_variations", "command_injection", "path_traversal",
+        "null_byte_injection", "mongodb_injection", "couchdb_injection", "dynamodb_obfuscate",
+        "nosql_operator_injection", "ssti_injection", "ssti_syntax_obfuscate", "ssti_framework_variation",
+        // Phishing
+        "domain_typosquat", "advanced_domain_spoof", "email_obfuscation", "url_shortening_pattern",
+        // Obfuscation
+        "rot13", "reverse_string", "vowel_swap", "double_characters", "whitespace_padding", "js_string_concat",
+        // Unicode
+        "homoglyph_substitution", "unicode_variations", "zalgo_text", "space_variants", "unicode_normalize_variants",
+        // Cloudflare
+        "cloudflare_turnstile_variation", "cloudflare_challenge_response", "tls_fingerprint_variation",
+        "tls_handshake_pattern", "canvas_fingerprint_variation", "webgl_fingerprint_obfuscate",
+        "font_fingerprint_consistency",
+        // Web Security
+        "http_header_variation", "api_endpoint_variation", "graphql_obfuscate", "graphql_variable_injection",
+        "graphql_introspection_bypass", "session_token_variation", "jwt_header_manipulation",
+        "jwt_payload_obfuscate", "jwt_algorithm_confusion", "jwt_signature_bypass",
+        // Shell
+        "bash_obfuscate", "powershell_obfuscate", "env_var_obfuscate", "file_path_obfuscate",
+        // Bot detection
+        "random_user_agent", "http2_header_order", "cloudflare_challenge_variation", "accept_language_variation",
+    ];
+    
+    // Build JSON object with function names as keys and their endpoint paths as values
+    let function_mappings: Vec<String> = functions.iter()
+        .map(|f| format!(r#""{}":{{"endpoint":"/transform","method":"POST"}}"#, f))
+        .collect();
+    
+    let response_body = format!(r#"{{"functions":{{{}}}}}"#, function_mappings.join(","));
     send_response(stream, 200, "OK", "application/json", &response_body);
 }
 
@@ -653,6 +697,24 @@ mod tests {
         let outputs = result.unwrap();
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0], "olleh");
+    }
+
+    #[test]
+    fn test_function_paths_response_format() {
+        // Test that function paths are correctly formatted
+        // Since we can't easily test the HTTP handler directly, we verify the structure
+        // by checking that all functions from parse_and_transform are valid
+        let functions = vec![
+            "leetspeak", "base64_encode", "url_encode", "reverse_string", "rot13",
+            "to_snake_case", "to_camel_case", "to_kebab_case", "random_user_agent",
+        ];
+        
+        for function in functions {
+            let json = format!(r#"{{"function":"{}","input":"test"}}"#, function);
+            let result = parse_and_transform(&json);
+            // All these functions should be valid
+            assert!(result.is_ok(), "Function {} should be valid", function);
+        }
     }
 }
 

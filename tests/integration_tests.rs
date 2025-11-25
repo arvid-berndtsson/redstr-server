@@ -304,4 +304,46 @@ fn test_root_endpoint_has_all_endpoints() {
     assert!(body.contains("/functions"));
     assert!(body.contains("/health"));
     assert!(body.contains("/version"));
+    assert!(body.contains("/function-paths"));
+}
+
+#[test]
+#[ignore] // Ignore by default as it requires server to be running
+fn test_function_paths_endpoint() {
+    let response = send_get_request("/function-paths");
+    assert!(response.contains("200 OK"));
+    let body = extract_body(&response);
+    assert!(body.contains(r#""functions""#));
+    // Check for some known functions with their endpoint paths
+    assert!(body.contains("leetspeak"));
+    assert!(body.contains("base64_encode"));
+    assert!(body.contains("reverse_string"));
+    assert!(body.contains(r#""endpoint":"/transform""#));
+    assert!(body.contains(r#""method":"POST""#));
+}
+
+#[test]
+#[ignore] // Ignore by default as it requires server to be running
+fn test_function_paths_has_all_functions() {
+    let response = send_get_request("/function-paths");
+    assert!(response.contains("200 OK"));
+    let body = extract_body(&response);
+    
+    // Verify that all major categories are represented
+    let categories = vec![
+        "leetspeak", "randomize_capitalization", // Case transformations
+        "base64_encode", "url_encode", "hex_encode", // Encoding
+        "sql_comment_injection", "xss_tag_variations", // Injection
+        "domain_typosquat", "email_obfuscation", // Phishing
+        "rot13", "reverse_string", // Obfuscation
+        "homoglyph_substitution", "zalgo_text", // Unicode
+        "cloudflare_turnstile_variation", // Cloudflare
+        "jwt_header_manipulation", // Web Security
+        "bash_obfuscate", "powershell_obfuscate", // Shell
+        "random_user_agent", // Bot detection
+    ];
+    
+    for function in categories {
+        assert!(body.contains(function), "Missing function: {}", function);
+    }
 }
