@@ -1,9 +1,28 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Simple HTTP server for redstr transformations
 /// Provides REST API for external tools to use redstr
+///
+/// Logging format:
+/// All logs include structured key-value pairs for easy filtering in Railway and other platforms:
+/// - level: info, warn, error
+/// - type: request, success, error, response
+/// - method: HTTP method (GET, POST, etc.)
+/// - path: Request path
+/// - client: Client IP address
+/// - status: HTTP status code (for responses)
+/// - message: Success message (for success logs)
+/// - error: Error message (for error logs)
+///
+/// Example Railway filters:
+/// - `level=error` - Show only errors
+/// - `level=warn OR level=error` - Show warnings and errors
+/// - `path=/transform` - Show logs for /transform endpoint
+/// - `status=500` - Show 500 errors
+/// - `"Unknown function"` - Search for specific error messages
 fn main() {
     let address = "127.0.0.1:8080";
     let listener = TcpListener::bind(address)
@@ -25,6 +44,11 @@ fn main() {
 }
 
 fn handle_client(mut stream: TcpStream) {
+    // Get client address for logging
+    let client_addr = stream.peer_addr()
+        .map(|addr| addr.to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+    
     // 8KB buffer for request handling - supports most use cases
     // For larger requests, consider using a production HTTP server library
     let mut buffer = [0; 8192];
@@ -33,30 +57,39 @@ fn handle_client(mut stream: TcpStream) {
         Ok(size) => {
             let request = String::from_utf8_lossy(&buffer[..size]);
             
+            // Extract method and path for logging
+            let (method, path) = extract_method_and_path(&request);
+            log_request(&client_addr, &method, &path);
+            
             // Parse HTTP request
             if request.starts_with("POST /transform") {
-                handle_transform(&mut stream, &request);
+                handle_transform(&mut stream, &request, &client_addr);
             } else if request.starts_with("POST /batch") {
-                handle_batch(&mut stream, &request);
+                handle_batch(&mut stream, &request, &client_addr);
             } else if request.starts_with("GET /health") {
+                log_response(&client_addr, "GET", "/health", 200);
                 send_response(&mut stream, 200, "OK", "application/json", r#"{"status":"healthy"}"#);
             } else if request.starts_with("GET /functions") {
-                handle_functions(&mut stream);
+                handle_functions(&mut stream, &client_addr);
             } else if request.starts_with("GET /version") {
+                log_response(&client_addr, "GET", "/version", 200);
                 send_response(&mut stream, 200, "OK", "application/json", r#"{"service":"redstr-server","version":"0.1.0","redstr_version":"0.2.0"}"#);
             } else if request.starts_with("GET /") {
+                log_response(&client_addr, "GET", "/", 200);
                 send_response(&mut stream, 200, "OK", "application/json", r#"{"service":"redstr","version":"0.2.0","endpoints":["/transform","/batch","/functions","/health","/version"]}"#);
             } else {
+                log_error(&client_addr, &method, &path, "Endpoint not found");
+                log_response(&client_addr, &method, &path, 404);
                 send_response(&mut stream, 404, "Not Found", "text/plain", "Endpoint not found");
             }
         }
         Err(e) => {
-            eprintln!("Failed to read from stream: {}", e);
+            log_error(&client_addr, "UNKNOWN", "UNKNOWN", &format!("Failed to read from stream: {}", e));
         }
     }
 }
 
-fn handle_transform(stream: &mut TcpStream, request: &str) {
+fn handle_transform(stream: &mut TcpStream, request: &str, client_addr: &str) {
     // Extract JSON body from POST request
     let body_start = request.find("\r\n\r\n").map(|i| i + 4);
     
@@ -71,15 +104,21 @@ fn handle_transform(stream: &mut TcpStream, request: &str) {
         
         match result {
             Ok(output) => {
+                log_success(client_addr, "POST", "/transform", &format!("Transformation successful"));
+                log_response(client_addr, "POST", "/transform", 200);
                 let response_body = format!(r#"{{"output":"{}"}}"#, escape_json(&output));
                 send_response(stream, 200, "OK", "application/json", &response_body);
             }
             Err(e) => {
+                log_error(client_addr, "POST", "/transform", &format!("Transformation failed: {}", e));
+                log_response(client_addr, "POST", "/transform", 400);
                 let error_body = format!(r#"{{"error":"{}"}}"#, escape_json(&e));
                 send_response(stream, 400, "Bad Request", "application/json", &error_body);
             }
         }
     } else {
+        log_error(client_addr, "POST", "/transform", "No body found in request");
+        log_response(client_addr, "POST", "/transform", 400);
         send_response(stream, 400, "Bad Request", "text/plain", "No body found");
     }
 }
@@ -236,7 +275,7 @@ fn escape_json(s: &str) -> String {
         .replace('\t', "\\t")
 }
 
-fn handle_functions(stream: &mut TcpStream) {
+fn handle_functions(stream: &mut TcpStream, client_addr: &str) {
     // List all available transformation functions
     // Note: This list must be kept in sync with parse_and_transform function
     // Consider using a macro or shared constant in future to avoid duplication
@@ -272,10 +311,11 @@ fn handle_functions(stream: &mut TcpStream) {
     
     let functions_json: Vec<String> = functions.iter().map(|f| format!("\"{}\"", f)).collect();
     let response_body = format!(r#"{{"functions":[{}],"count":{}}}"#, functions_json.join(","), functions.len());
+    log_response(client_addr, "GET", "/functions", 200);
     send_response(stream, 200, "OK", "application/json", &response_body);
 }
 
-fn handle_batch(stream: &mut TcpStream, request: &str) {
+fn handle_batch(stream: &mut TcpStream, request: &str, client_addr: &str) {
     // Extract JSON body from POST request
     let body_start = request.find("\r\n\r\n").map(|i| i + 4);
     
@@ -288,6 +328,8 @@ fn handle_batch(stream: &mut TcpStream, request: &str) {
         
         match result {
             Ok(outputs) => {
+                log_success(client_addr, "POST", "/batch", &format!("Batch transformation successful: {} operations", outputs.len()));
+                log_response(client_addr, "POST", "/batch", 200);
                 // Escape each output and build the JSON array
                 let outputs_json: Vec<String> = outputs.iter()
                     .map(|output| format!(r#"{{"output":"{}"}}"#, escape_json(output)))
@@ -296,11 +338,15 @@ fn handle_batch(stream: &mut TcpStream, request: &str) {
                 send_response(stream, 200, "OK", "application/json", &response_body);
             }
             Err(e) => {
+                log_error(client_addr, "POST", "/batch", &format!("Batch transformation failed: {}", e));
+                log_response(client_addr, "POST", "/batch", 400);
                 let error_body = format!(r#"{{"error":"{}"}}"#, escape_json(&e));
                 send_response(stream, 400, "Bad Request", "application/json", &error_body);
             }
         }
     } else {
+        log_error(client_addr, "POST", "/batch", "No body found in request");
+        log_response(client_addr, "POST", "/batch", 400);
         send_response(stream, 400, "Bad Request", "text/plain", "No body found");
     }
 }
@@ -381,6 +427,54 @@ fn parse_and_batch_transform(json: &str) -> Result<Vec<String>, String> {
     }
     
     Ok(results)
+}
+
+/// Get timestamp in milliseconds since UNIX epoch for logging
+fn get_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// Extract HTTP method and path from request string
+fn extract_method_and_path(request: &str) -> (String, String) {
+    let first_line = request.lines().next().unwrap_or("");
+    let parts: Vec<&str> = first_line.split_whitespace().collect();
+    
+    let method = parts.get(0).unwrap_or(&"UNKNOWN").to_string();
+    let path = parts.get(1).unwrap_or(&"UNKNOWN").to_string();
+    
+    (method, path)
+}
+
+/// Log incoming HTTP request
+fn log_request(client_addr: &str, method: &str, path: &str) {
+    let timestamp = get_timestamp();
+    println!("[{}] level=info type=request method={} path={} client={}", 
+             timestamp, method, path, client_addr);
+}
+
+/// Log successful operation
+fn log_success(client_addr: &str, method: &str, path: &str, message: &str) {
+    let timestamp = get_timestamp();
+    println!("[{}] level=info type=success method={} path={} client={} message=\"{}\"", 
+             timestamp, method, path, client_addr, message);
+}
+
+/// Log error condition
+fn log_error(client_addr: &str, method: &str, path: &str, error: &str) {
+    let timestamp = get_timestamp();
+    eprintln!("[{}] level=error type=error method={} path={} client={} error=\"{}\"", 
+              timestamp, method, path, client_addr, error);
+}
+
+/// Log HTTP response
+fn log_response(client_addr: &str, method: &str, path: &str, status: u16) {
+    let timestamp = get_timestamp();
+    let level = if status >= 400 { "warn" } else { "info" };
+    println!("[{}] level={} type=response method={} path={} client={} status={}", 
+             timestamp, level, method, path, client_addr, status);
 }
 
 fn send_response(stream: &mut TcpStream, status: u16, status_text: &str, content_type: &str, body: &str) {
@@ -653,6 +747,45 @@ mod tests {
         let outputs = result.unwrap();
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0], "olleh");
+    }
+
+    #[test]
+    fn test_get_timestamp() {
+        let timestamp = get_timestamp();
+        // Timestamp should be a reasonable value (after year 2020)
+        assert!(timestamp > 1577836800000); // Jan 1, 2020 in milliseconds
+    }
+
+    #[test]
+    fn test_extract_method_and_path_get() {
+        let request = "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        let (method, path) = extract_method_and_path(request);
+        assert_eq!(method, "GET");
+        assert_eq!(path, "/health");
+    }
+
+    #[test]
+    fn test_extract_method_and_path_post() {
+        let request = "POST /transform HTTP/1.1\r\nHost: localhost\r\n\r\n{\"test\":\"data\"}";
+        let (method, path) = extract_method_and_path(request);
+        assert_eq!(method, "POST");
+        assert_eq!(path, "/transform");
+    }
+
+    #[test]
+    fn test_extract_method_and_path_empty() {
+        let request = "";
+        let (method, path) = extract_method_and_path(request);
+        assert_eq!(method, "UNKNOWN");
+        assert_eq!(path, "UNKNOWN");
+    }
+
+    #[test]
+    fn test_extract_method_and_path_incomplete() {
+        let request = "GET";
+        let (method, path) = extract_method_and_path(request);
+        assert_eq!(method, "GET");
+        assert_eq!(path, "UNKNOWN");
     }
 }
 

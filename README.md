@@ -272,13 +272,65 @@ Then in another terminal, run the integration tests:
 cargo test --test integration_tests -- --ignored
 ```
 
+## Logging
+
+The server provides comprehensive structured logging for all requests and operations, making it easy to monitor, debug, and troubleshoot.
+
+### Log Format
+
+All logs use a structured key-value format that's compatible with Railway and other log aggregation platforms:
+
+```
+[timestamp] level=<level> type=<type> method=<method> path=<path> client=<client> [additional fields]
+```
+
+**Log Levels:**
+- `info` - Normal operations (requests, successful responses)
+- `warn` - Warning conditions (4xx responses)
+- `error` - Error conditions (errors during processing)
+
+**Log Types:**
+- `request` - Incoming HTTP request
+- `success` - Successful operation
+- `error` - Error condition
+- `response` - HTTP response sent
+
+**Example logs:**
+```
+[1764085626906] level=info type=request method=GET path=/health client=127.0.0.1:34520
+[1764085626911] level=info type=success method=POST path=/transform client=127.0.0.1:34522 message="Transformation successful"
+[1764085626916] level=error type=error method=POST path=/transform client=127.0.0.1:34534 error="Transformation failed: Unknown function: invalid"
+[1764085626916] level=warn type=response method=POST path=/transform client=127.0.0.1:34534 status=400
+```
+
+### Filtering Logs in Railway
+
+Use these filters to find specific logs in Railway:
+
+- `level=error` - Show only errors
+- `level=warn OR level=error` - Show warnings and errors
+- `type=request` - Show all incoming requests
+- `path=/transform` - Show logs for specific endpoint
+- `status=400` - Show specific status codes
+- `"Unknown function"` - Search for specific error messages
+- `client=127.0.0.1` - Filter by client IP
+
+### What Gets Logged
+
+✅ **All incoming requests** - Method, path, and client IP
+✅ **All responses** - Status code and endpoint
+✅ **Successful transformations** - Confirmation messages
+✅ **All errors** - Detailed error messages with context
+✅ **Connection failures** - TCP connection issues
+✅ **Stream errors** - I/O operation failures
+
 ## Future Enhancements
 
 - [ ] Configuration file support
 - [ ] Custom port binding
 - [ ] Authentication/authorization
 - [ ] Rate limiting
-- [ ] Request logging
+- [x] Request logging (✅ Completed)
 - [ ] Metrics endpoint
 - [ ] Async I/O with Tokio
 - [ ] TLS support
