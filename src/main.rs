@@ -116,8 +116,8 @@ async fn main() {
 /// Root endpoint handler
 async fn root_handler() -> Json<RootResponse> {
     Json(RootResponse {
-        service: "redstr".to_string(),
-        version: "0.2.0".to_string(),
+        service: "redstr-server".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
         endpoints: vec![
             "/transform".to_string(),
             "/batch".to_string(),
@@ -139,8 +139,8 @@ async fn health_handler() -> Json<HealthResponse> {
 async fn version_handler() -> Json<VersionResponse> {
     Json(VersionResponse {
         service: "redstr-server".to_string(),
-        version: "0.1.3".to_string(),
-        redstr_version: "0.2.0".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        redstr_version: "0.2.0".to_string(), // redstr library version
     })
 }
 
