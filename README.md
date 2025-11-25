@@ -52,7 +52,7 @@ Returns server information and available endpoints.
 {
   "service": "redstr",
   "version": "0.2.0",
-  "endpoints": ["/transform", "/batch", "/functions", "/health", "/version"]
+  "endpoints": ["/transform", "/batch", "/functions", "/health", "/version", "/function-paths"]
 }
 ```
 
@@ -89,6 +89,31 @@ List all available transformation functions.
 {
   "functions": ["leetspeak", "base64_encode", "url_encode", ...],
   "count": 62
+}
+```
+
+### GET /function-paths
+
+Get all string manipulation functions with their endpoint paths.
+
+**Response:**
+```json
+{
+  "functions": {
+    "leetspeak": {
+      "endpoint": "/transform",
+      "method": "POST"
+    },
+    "base64_encode": {
+      "endpoint": "/transform",
+      "method": "POST"
+    },
+    "url_encode": {
+      "endpoint": "/transform",
+      "method": "POST"
+    },
+    ...
+  }
 }
 ```
 
@@ -153,6 +178,9 @@ See the [redstr documentation](https://github.com/arvid-berndtsson/redstr) for a
 ```bash
 # List all available functions
 curl http://localhost:8080/functions
+
+# Get all functions with their endpoint paths
+curl http://localhost:8080/function-paths
 
 # Check server health
 curl http://localhost:8080/health
