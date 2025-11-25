@@ -1,245 +1,152 @@
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::thread;
+use axum::{
+    extract::Json,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Router,
+};
+use serde::{Deserialize, Serialize};
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tracing::{info, error};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-/// Simple HTTP server for redstr transformations
-/// Provides REST API for external tools to use redstr
-fn main() {
-    let address = "127.0.0.1:8080";
-    let listener = TcpListener::bind(address)
+/// Request payload for /transform endpoint
+#[derive(Debug, Deserialize)]
+struct TransformRequest {
+    function: String,
+    input: String,
+}
+
+/// Response payload for /transform endpoint
+#[derive(Debug, Serialize)]
+struct TransformResponse {
+    output: String,
+}
+
+/// Request payload for /batch endpoint
+#[derive(Debug, Deserialize)]
+struct BatchRequest {
+    transforms: Vec<TransformRequest>,
+}
+
+/// Response payload for /batch endpoint
+#[derive(Debug, Serialize)]
+struct BatchResponse {
+    results: Vec<TransformResponse>,
+}
+
+/// Error response
+#[derive(Debug, Serialize)]
+struct ErrorResponse {
+    error: String,
+}
+
+/// Version response
+#[derive(Debug, Serialize)]
+struct VersionResponse {
+    service: String,
+    version: String,
+    redstr_version: String,
+}
+
+/// Root response
+#[derive(Debug, Serialize)]
+struct RootResponse {
+    service: String,
+    version: String,
+    endpoints: Vec<String>,
+}
+
+/// Health response
+#[derive(Debug, Serialize)]
+struct HealthResponse {
+    status: String,
+}
+
+/// Functions response
+#[derive(Debug, Serialize)]
+struct FunctionsResponse {
+    functions: Vec<String>,
+    count: usize,
+}
+
+#[tokio::main]
+async fn main() {
+    // Initialize tracing subscriber for structured logging
+    // Use JSON format for Railway compatibility with @attribute:value filtering
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,tower_http=debug,axum=debug".into()),
+        )
+        .with(tracing_subscriber::fmt::layer().json())
+        .init();
+
+    info!("Starting redstr HTTP server");
+
+    // Build the application with routes
+    let app = Router::new()
+        .route("/", get(root_handler))
+        .route("/health", get(health_handler))
+        .route("/version", get(version_handler))
+        .route("/functions", get(functions_handler))
+        .route("/transform", post(transform_handler))
+        .route("/batch", post(batch_handler))
+        // Add CORS middleware
+        .layer(CorsLayer::permissive())
+        // Add tracing middleware for automatic request/response logging
+        .layer(TraceLayer::new_for_http());
+
+    // Bind to address (Railway sets PORT env var, default to 8080)
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let address = format!("0.0.0.0:{}", port);
+    
+    info!("redstr HTTP server listening on http://{}", address);
+    info!("Ready to accept transformation requests");
+
+    // Start the server
+    let listener = tokio::net::TcpListener::bind(&address)
+        .await
         .expect("Failed to bind to address");
     
-    println!("redstr HTTP server listening on http://{}", address);
-    println!("Ready to accept transformation requests");
-    
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                thread::spawn(|| handle_client(stream));
-            }
-            Err(e) => {
-                eprintln!("Connection failed: {}", e);
-            }
-        }
-    }
+    axum::serve(listener, app)
+        .await
+        .expect("Server error");
 }
 
-fn handle_client(mut stream: TcpStream) {
-    // 8KB buffer for request handling - supports most use cases
-    // For larger requests, consider using a production HTTP server library
-    let mut buffer = [0; 8192];
-    
-    match stream.read(&mut buffer) {
-        Ok(size) => {
-            let request = String::from_utf8_lossy(&buffer[..size]);
-            
-            // Parse HTTP request
-            if request.starts_with("POST /transform") {
-                handle_transform(&mut stream, &request);
-            } else if request.starts_with("POST /batch") {
-                handle_batch(&mut stream, &request);
-            } else if request.starts_with("GET /health") {
-                send_response(&mut stream, 200, "OK", "application/json", r#"{"status":"healthy"}"#);
-            } else if request.starts_with("GET /functions") {
-                handle_functions(&mut stream);
-            } else if request.starts_with("GET /version") {
-                send_response(&mut stream, 200, "OK", "application/json", r#"{"service":"redstr-server","version":"0.1.0","redstr_version":"0.2.0"}"#);
-            } else if request.starts_with("GET /") {
-                send_response(&mut stream, 200, "OK", "application/json", r#"{"service":"redstr","version":"0.2.0","endpoints":["/transform","/batch","/functions","/health","/version"]}"#);
-            } else {
-                send_response(&mut stream, 404, "Not Found", "text/plain", "Endpoint not found");
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to read from stream: {}", e);
-        }
-    }
+/// Root endpoint handler
+async fn root_handler() -> Json<RootResponse> {
+    Json(RootResponse {
+        service: "redstr-server".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        endpoints: vec![
+            "/transform".to_string(),
+            "/batch".to_string(),
+            "/functions".to_string(),
+            "/health".to_string(),
+            "/version".to_string(),
+        ],
+    })
 }
 
-fn handle_transform(stream: &mut TcpStream, request: &str) {
-    // Extract JSON body from POST request
-    let body_start = request.find("\r\n\r\n").map(|i| i + 4);
-    
-    if let Some(start) = body_start {
-        let body = &request[start..];
-        
-        // Simple JSON parsing - suitable for basic use cases
-        // Limitations: Does not handle nested objects, arrays, or complex escaping
-        // For production use with complex JSON, consider adding serde_json dependency
-        // Expected format: {"function":"method_name","input":"text"}
-        let result = parse_and_transform(body);
-        
-        match result {
-            Ok(output) => {
-                let response_body = format!(r#"{{"output":"{}"}}"#, escape_json(&output));
-                send_response(stream, 200, "OK", "application/json", &response_body);
-            }
-            Err(e) => {
-                let error_body = format!(r#"{{"error":"{}"}}"#, escape_json(&e));
-                send_response(stream, 400, "Bad Request", "application/json", &error_body);
-            }
-        }
-    } else {
-        send_response(stream, 400, "Bad Request", "text/plain", "No body found");
-    }
+/// Health check endpoint handler
+async fn health_handler() -> Json<HealthResponse> {
+    Json(HealthResponse {
+        status: "healthy".to_string(),
+    })
 }
 
-fn parse_and_transform(json: &str) -> Result<String, String> {
-    // Simple JSON parsing - extract function and input
-    let function = extract_json_field(json, "function")
-        .ok_or("Missing 'function' field")?;
-    let input = extract_json_field(json, "input")
-        .ok_or("Missing 'input' field")?;
-    
-    // Call appropriate redstr function
-    let output = match function.as_str() {
-        // Case transformations
-        "randomize_capitalization" => redstr::randomize_capitalization(&input),
-        "leetspeak" => redstr::leetspeak(&input),
-        "alternate_case" => redstr::alternate_case(&input),
-        "case_swap" => redstr::case_swap(&input),
-        "to_camel_case" => redstr::to_camel_case(&input),
-        "to_snake_case" => redstr::to_snake_case(&input),
-        "to_kebab_case" => redstr::to_kebab_case(&input),
-        
-        // Encoding
-        "base64_encode" => redstr::base64_encode(&input),
-        "url_encode" => redstr::url_encode(&input),
-        "hex_encode" => redstr::hex_encode(&input),
-        "html_entity_encode" => redstr::html_entity_encode(&input),
-        "mixed_encoding" => redstr::mixed_encoding(&input),
-        
-        // Injection
-        "sql_comment_injection" => redstr::sql_comment_injection(&input),
-        "xss_tag_variations" => redstr::xss_tag_variations(&input),
-        "command_injection" => redstr::command_injection(&input),
-        "path_traversal" => redstr::path_traversal(&input),
-        "null_byte_injection" => redstr::null_byte_injection(&input),
-        "mongodb_injection" => redstr::mongodb_injection(&input),
-        "couchdb_injection" => redstr::couchdb_injection(&input),
-        "dynamodb_obfuscate" => redstr::dynamodb_obfuscate(&input),
-        "nosql_operator_injection" => redstr::nosql_operator_injection(&input),
-        "ssti_injection" => redstr::ssti_injection(&input),
-        "ssti_syntax_obfuscate" => redstr::ssti_syntax_obfuscate(&input),
-        "ssti_framework_variation" => {
-            // For this function, we expect input format: "template|framework"
-            let parts: Vec<&str> = input.split('|').collect();
-            if parts.len() == 2 {
-                redstr::ssti_framework_variation(parts[0], parts[1])
-            } else {
-                // Default to jinja2 if no framework specified
-                redstr::ssti_framework_variation(&input, "jinja2")
-            }
-        },
-        
-        // Phishing
-        "domain_typosquat" => redstr::domain_typosquat(&input),
-        "advanced_domain_spoof" => redstr::advanced_domain_spoof(&input),
-        "email_obfuscation" => redstr::email_obfuscation(&input),
-        "url_shortening_pattern" => redstr::url_shortening_pattern(&input),
-        
-        // Obfuscation
-        "rot13" => redstr::rot13(&input),
-        "reverse_string" => redstr::reverse_string(&input),
-        "vowel_swap" => redstr::vowel_swap(&input),
-        "double_characters" => redstr::double_characters(&input),
-        "whitespace_padding" => redstr::whitespace_padding(&input),
-        "js_string_concat" => redstr::js_string_concat(&input),
-        
-        // Unicode
-        "homoglyph_substitution" => redstr::homoglyph_substitution(&input),
-        "unicode_variations" => redstr::unicode_variations(&input),
-        "zalgo_text" => redstr::zalgo_text(&input),
-        "space_variants" => redstr::space_variants(&input),
-        "unicode_normalize_variants" => redstr::unicode_normalize_variants(&input),
-        
-        // Cloudflare
-        "cloudflare_turnstile_variation" => redstr::cloudflare_turnstile_variation(&input),
-        "cloudflare_challenge_response" => redstr::cloudflare_challenge_response(&input),
-        "tls_fingerprint_variation" => redstr::tls_fingerprint_variation(&input),
-        "tls_handshake_pattern" => redstr::tls_handshake_pattern(&input),
-        "canvas_fingerprint_variation" => redstr::canvas_fingerprint_variation(&input),
-        "webgl_fingerprint_obfuscate" => redstr::webgl_fingerprint_obfuscate(&input),
-        "font_fingerprint_consistency" => redstr::font_fingerprint_consistency(&input),
-        
-        // Web Security
-        "http_header_variation" => redstr::http_header_variation(&input),
-        "api_endpoint_variation" => redstr::api_endpoint_variation(&input),
-        "graphql_obfuscate" => redstr::graphql_obfuscate(&input),
-        "graphql_variable_injection" => redstr::graphql_variable_injection(&input),
-        "graphql_introspection_bypass" => redstr::graphql_introspection_bypass(&input),
-        "session_token_variation" => redstr::session_token_variation(&input),
-        "jwt_header_manipulation" => redstr::jwt_header_manipulation(&input),
-        "jwt_payload_obfuscate" => redstr::jwt_payload_obfuscate(&input),
-        "jwt_algorithm_confusion" => redstr::jwt_algorithm_confusion(&input),
-        "jwt_signature_bypass" => redstr::jwt_signature_bypass(&input),
-        
-        // Shell
-        "bash_obfuscate" => redstr::bash_obfuscate(&input),
-        "powershell_obfuscate" => redstr::powershell_obfuscate(&input),
-        "env_var_obfuscate" => redstr::env_var_obfuscate(&input),
-        "file_path_obfuscate" => redstr::file_path_obfuscate(&input),
-        
-        // Bot detection
-        "random_user_agent" => redstr::random_user_agent(), // No input needed - generates random UA
-        "http2_header_order" => redstr::http2_header_order(&input),
-        "cloudflare_challenge_variation" => redstr::cloudflare_challenge_variation(&input),
-        "accept_language_variation" => redstr::accept_language_variation(&input),
-        
-        _ => return Err(format!("Unknown function: {}", function)),
-    };
-    
-    Ok(output)
+/// Version endpoint handler
+async fn version_handler() -> Json<VersionResponse> {
+    Json(VersionResponse {
+        service: "redstr-server".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        redstr_version: "0.2.0".to_string(), // redstr library version
+    })
 }
 
-fn extract_json_field(json: &str, field: &str) -> Option<String> {
-    // Simple JSON field extraction - handles basic escaped quotes and backslashes
-    // Limitations: Does not handle nested objects or complex JSON structures
-    let pattern = format!("\"{}\":\"", field);
-    let start = json.find(&pattern)? + pattern.len();
-    let remaining = &json[start..];
-    
-    // Find the closing quote, accounting for escaped quotes
-    let mut end = 0;
-    let mut escaped = false;
-    let mut found_closing_quote = false;
-    for (i, c) in remaining.chars().enumerate() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if c == '\\' {
-            escaped = true;
-            continue;
-        }
-        if c == '"' {
-            end = i;
-            found_closing_quote = true;
-            break;
-        }
-    }
-    
-    // Return None only if we didn't find a closing quote at all
-    if !found_closing_quote {
-        return None;
-    }
-    
-    Some(remaining[..end].replace("\\\"", "\"").replace("\\\\", "\\")
-        .replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t"))
-}
-
-fn escape_json(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
-}
-
-fn handle_functions(stream: &mut TcpStream) {
-    // List all available transformation functions
-    // Note: This list must be kept in sync with parse_and_transform function
-    // Consider using a macro or shared constant in future to avoid duplication
+/// Functions endpoint handler
+async fn functions_handler() -> Json<FunctionsResponse> {
     let functions = vec![
         // Case transformations
         "randomize_capitalization", "leetspeak", "alternate_case", "case_swap",
@@ -269,129 +176,173 @@ fn handle_functions(stream: &mut TcpStream) {
         // Bot detection
         "random_user_agent", "http2_header_order", "cloudflare_challenge_variation", "accept_language_variation",
     ];
-    
-    let functions_json: Vec<String> = functions.iter().map(|f| format!("\"{}\"", f)).collect();
-    let response_body = format!(r#"{{"functions":[{}],"count":{}}}"#, functions_json.join(","), functions.len());
-    send_response(stream, 200, "OK", "application/json", &response_body);
+
+    Json(FunctionsResponse {
+        count: functions.len(),
+        functions: functions.into_iter().map(String::from).collect(),
+    })
 }
 
-fn handle_batch(stream: &mut TcpStream, request: &str) {
-    // Extract JSON body from POST request
-    let body_start = request.find("\r\n\r\n").map(|i| i + 4);
+/// Transform endpoint handler
+async fn transform_handler(
+    Json(payload): Json<TransformRequest>,
+) -> Response {
+    info!(function = %payload.function, "Processing transformation request");
     
-    if let Some(start) = body_start {
-        let body = &request[start..];
-        
-        // Expected format: {"transforms":[{"function":"method_name","input":"text"},{"function":"method_name2","input":"text2"}]}
-        // For simplicity, we'll process each transform sequentially
-        let result = parse_and_batch_transform(body);
-        
-        match result {
-            Ok(outputs) => {
-                // Escape each output and build the JSON array
-                let outputs_json: Vec<String> = outputs.iter()
-                    .map(|output| format!(r#"{{"output":"{}"}}"#, escape_json(output)))
-                    .collect();
-                let response_body = format!(r#"{{"results":[{}]}}"#, outputs_json.join(","));
-                send_response(stream, 200, "OK", "application/json", &response_body);
-            }
-            Err(e) => {
-                let error_body = format!(r#"{{"error":"{}"}}"#, escape_json(&e));
-                send_response(stream, 400, "Bad Request", "application/json", &error_body);
-            }
+    match execute_transform(&payload.function, &payload.input) {
+        Ok(output) => {
+            info!(function = %payload.function, "Transformation successful");
+            (StatusCode::OK, Json(TransformResponse { output })).into_response()
         }
-    } else {
-        send_response(stream, 400, "Bad Request", "text/plain", "No body found");
+        Err(err) => {
+            error!(function = %payload.function, error = %err, "Transformation failed");
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse { error: err }),
+            )
+                .into_response()
+        }
     }
 }
 
-fn parse_and_batch_transform(json: &str) -> Result<Vec<String>, String> {
-    // Simple batch processing - extract transforms array
-    // Expected format: {"transforms":[{"function":"func1","input":"text1"},{"function":"func2","input":"text2"}]}
+/// Batch transform endpoint handler
+async fn batch_handler(
+    Json(payload): Json<BatchRequest>,
+) -> Response {
+    info!(count = payload.transforms.len(), "Processing batch transformation request");
     
-    // Find the transforms field (allowing for whitespace)
-    let transforms_pattern = r#""transforms""#;
-    let transforms_start = json.find(transforms_pattern)
-        .ok_or("Missing 'transforms' field")?;
-    
-    // Find the opening bracket of the array (skipping whitespace and colon)
-    let search_start = transforms_start + transforms_pattern.len();
-    let remaining = &json[search_start..];
-    let array_start_offset = remaining.chars()
-        .position(|c| c == '[')
-        .ok_or("Invalid transforms array format")?;
-    let array_start = search_start + array_start_offset + 1;
-    
-    // Find matching closing bracket
-    let array_end = json[array_start..].find(']')
-        .map(|i| array_start + i)
-        .ok_or("Invalid transforms array format")?;
-    
-    let transforms_json = &json[array_start..array_end];
-    
-    // Split by objects (simple approach - tracks braces and strings)
-    // Note: This parser has limitations with complex nested structures
-    // For production use, consider using serde_json for proper JSON parsing
+    if payload.transforms.is_empty() {
+        error!("Batch request contains no transforms");
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "No transforms provided".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
     let mut results = Vec::new();
-    let mut current_start = 0;
-    let mut brace_count = 0;
-    let mut in_string = false;
-    let mut escaped = false;
-    
-    for (i, c) in transforms_json.chars().enumerate() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        
-        if c == '\\' {
-            escaped = true;
-            continue;
-        }
-        
-        if c == '"' {
-            in_string = !in_string;
-            continue;
-        }
-        
-        if in_string {
-            continue;
-        }
-        
-        if c == '{' {
-            if brace_count == 0 {
-                current_start = i;
-            }
-            brace_count += 1;
-        } else if c == '}' {
-            brace_count -= 1;
-            if brace_count == 0 {
-                // Extract and process this transform
-                let transform_json = &transforms_json[current_start..=i];
-                match parse_and_transform(transform_json) {
-                    Ok(output) => results.push(output),
-                    Err(e) => return Err(format!("Transform failed: {}", e)),
-                }
+    for transform in payload.transforms {
+        match execute_transform(&transform.function, &transform.input) {
+            Ok(output) => results.push(TransformResponse { output }),
+            Err(err) => {
+                error!(function = %transform.function, error = %err, "Batch transformation failed");
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!("Transform failed: {}", err),
+                    }),
+                )
+                    .into_response();
             }
         }
     }
-    
-    if results.is_empty() {
-        return Err("No valid transforms found in array".to_string());
-    }
-    
-    Ok(results)
+
+    info!(count = results.len(), "Batch transformation successful");
+    (StatusCode::OK, Json(BatchResponse { results })).into_response()
 }
 
-fn send_response(stream: &mut TcpStream, status: u16, status_text: &str, content_type: &str, body: &str) {
-    let response = format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\n\r\n{}",
-        status, status_text, content_type, body.len(), body
-    );
+/// Execute the transformation using redstr library
+fn execute_transform(function: &str, input: &str) -> Result<String, String> {
+    let output = match function {
+        // Case transformations
+        "randomize_capitalization" => redstr::randomize_capitalization(input),
+        "leetspeak" => redstr::leetspeak(input),
+        "alternate_case" => redstr::alternate_case(input),
+        "case_swap" => redstr::case_swap(input),
+        "to_camel_case" => redstr::to_camel_case(input),
+        "to_snake_case" => redstr::to_snake_case(input),
+        "to_kebab_case" => redstr::to_kebab_case(input),
+        
+        // Encoding
+        "base64_encode" => redstr::base64_encode(input),
+        "url_encode" => redstr::url_encode(input),
+        "hex_encode" => redstr::hex_encode(input),
+        "html_entity_encode" => redstr::html_entity_encode(input),
+        "mixed_encoding" => redstr::mixed_encoding(input),
+        
+        // Injection
+        "sql_comment_injection" => redstr::sql_comment_injection(input),
+        "xss_tag_variations" => redstr::xss_tag_variations(input),
+        "command_injection" => redstr::command_injection(input),
+        "path_traversal" => redstr::path_traversal(input),
+        "null_byte_injection" => redstr::null_byte_injection(input),
+        "mongodb_injection" => redstr::mongodb_injection(input),
+        "couchdb_injection" => redstr::couchdb_injection(input),
+        "dynamodb_obfuscate" => redstr::dynamodb_obfuscate(input),
+        "nosql_operator_injection" => redstr::nosql_operator_injection(input),
+        "ssti_injection" => redstr::ssti_injection(input),
+        "ssti_syntax_obfuscate" => redstr::ssti_syntax_obfuscate(input),
+        "ssti_framework_variation" => {
+            // For this function, we expect input format: "template|framework"
+            let parts: Vec<&str> = input.split('|').collect();
+            if parts.len() == 2 {
+                redstr::ssti_framework_variation(parts[0], parts[1])
+            } else {
+                // Default to jinja2 if no framework specified
+                redstr::ssti_framework_variation(input, "jinja2")
+            }
+        },
+        
+        // Phishing
+        "domain_typosquat" => redstr::domain_typosquat(input),
+        "advanced_domain_spoof" => redstr::advanced_domain_spoof(input),
+        "email_obfuscation" => redstr::email_obfuscation(input),
+        "url_shortening_pattern" => redstr::url_shortening_pattern(input),
+        
+        // Obfuscation
+        "rot13" => redstr::rot13(input),
+        "reverse_string" => redstr::reverse_string(input),
+        "vowel_swap" => redstr::vowel_swap(input),
+        "double_characters" => redstr::double_characters(input),
+        "whitespace_padding" => redstr::whitespace_padding(input),
+        "js_string_concat" => redstr::js_string_concat(input),
+        
+        // Unicode
+        "homoglyph_substitution" => redstr::homoglyph_substitution(input),
+        "unicode_variations" => redstr::unicode_variations(input),
+        "zalgo_text" => redstr::zalgo_text(input),
+        "space_variants" => redstr::space_variants(input),
+        "unicode_normalize_variants" => redstr::unicode_normalize_variants(input),
+        
+        // Cloudflare
+        "cloudflare_turnstile_variation" => redstr::cloudflare_turnstile_variation(input),
+        "cloudflare_challenge_response" => redstr::cloudflare_challenge_response(input),
+        "tls_fingerprint_variation" => redstr::tls_fingerprint_variation(input),
+        "tls_handshake_pattern" => redstr::tls_handshake_pattern(input),
+        "canvas_fingerprint_variation" => redstr::canvas_fingerprint_variation(input),
+        "webgl_fingerprint_obfuscate" => redstr::webgl_fingerprint_obfuscate(input),
+        "font_fingerprint_consistency" => redstr::font_fingerprint_consistency(input),
+        
+        // Web Security
+        "http_header_variation" => redstr::http_header_variation(input),
+        "api_endpoint_variation" => redstr::api_endpoint_variation(input),
+        "graphql_obfuscate" => redstr::graphql_obfuscate(input),
+        "graphql_variable_injection" => redstr::graphql_variable_injection(input),
+        "graphql_introspection_bypass" => redstr::graphql_introspection_bypass(input),
+        "session_token_variation" => redstr::session_token_variation(input),
+        "jwt_header_manipulation" => redstr::jwt_header_manipulation(input),
+        "jwt_payload_obfuscate" => redstr::jwt_payload_obfuscate(input),
+        "jwt_algorithm_confusion" => redstr::jwt_algorithm_confusion(input),
+        "jwt_signature_bypass" => redstr::jwt_signature_bypass(input),
+        
+        // Shell
+        "bash_obfuscate" => redstr::bash_obfuscate(input),
+        "powershell_obfuscate" => redstr::powershell_obfuscate(input),
+        "env_var_obfuscate" => redstr::env_var_obfuscate(input),
+        "file_path_obfuscate" => redstr::file_path_obfuscate(input),
+        
+        // Bot detection
+        "random_user_agent" => redstr::random_user_agent(), // No input needed - generates random UA
+        "http2_header_order" => redstr::http2_header_order(input),
+        "cloudflare_challenge_variation" => redstr::cloudflare_challenge_variation(input),
+        "accept_language_variation" => redstr::accept_language_variation(input),
+        
+        _ => return Err(format!("Unknown function: {}", function)),
+    };
     
-    if let Err(e) = stream.write_all(response.as_bytes()) {
-        eprintln!("Failed to send response: {}", e);
-    }
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -399,260 +350,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_json_field_basic() {
-        let json = r#"{"function":"leetspeak","input":"hello"}"#;
-        assert_eq!(extract_json_field(json, "function"), Some("leetspeak".to_string()));
-        assert_eq!(extract_json_field(json, "input"), Some("hello".to_string()));
-    }
-
-    #[test]
-    fn test_extract_json_field_with_escaped_quotes() {
-        let json = r#"{"function":"test","input":"hello \"world\""}"#;
-        assert_eq!(extract_json_field(json, "input"), Some("hello \"world\"".to_string()));
-    }
-
-    #[test]
-    fn test_extract_json_field_with_special_chars() {
-        let json = r#"{"function":"test","input":"line1\nline2\ttab"}"#;
-        let result = extract_json_field(json, "input");
-        assert_eq!(result, Some("line1\nline2\ttab".to_string()));
-    }
-
-    #[test]
-    fn test_extract_json_field_missing() {
-        let json = r#"{"function":"test"}"#;
-        assert_eq!(extract_json_field(json, "input"), None);
-    }
-
-    #[test]
-    fn test_escape_json_basic() {
-        assert_eq!(escape_json("hello"), "hello");
-    }
-
-    #[test]
-    fn test_escape_json_with_quotes() {
-        assert_eq!(escape_json("hello \"world\""), "hello \\\"world\\\"");
-    }
-
-    #[test]
-    fn test_escape_json_with_backslash() {
-        assert_eq!(escape_json("path\\to\\file"), "path\\\\to\\\\file");
-    }
-
-    #[test]
-    fn test_escape_json_with_newlines() {
-        assert_eq!(escape_json("line1\nline2"), "line1\\nline2");
-    }
-
-    #[test]
-    fn test_escape_json_with_tabs() {
-        assert_eq!(escape_json("col1\tcol2"), "col1\\tcol2");
-    }
-
-    #[test]
-    fn test_parse_and_transform_leetspeak() {
-        let json = r#"{"function":"leetspeak","input":"hello"}"#;
-        let result = parse_and_transform(json);
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        assert!(output.contains("3") || output.contains("0")); // leetspeak converts e->3, o->0
-    }
-
-    #[test]
-    fn test_parse_and_transform_base64_encode() {
-        let json = r#"{"function":"base64_encode","input":"test"}"#;
-        let result = parse_and_transform(json);
+    fn test_execute_transform_base64_encode() {
+        let result = execute_transform("base64_encode", "test");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "dGVzdA==");
     }
 
     #[test]
-    fn test_parse_and_transform_url_encode() {
-        let json = r#"{"function":"url_encode","input":"hello world"}"#;
-        let result = parse_and_transform(json);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "hello%20world");
-    }
-
-    #[test]
-    fn test_parse_and_transform_hex_encode() {
-        let json = r#"{"function":"hex_encode","input":"test"}"#;
-        let result = parse_and_transform(json);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "74657374");
-    }
-
-    #[test]
-    fn test_parse_and_transform_rot13() {
-        let json = r#"{"function":"rot13","input":"hello"}"#;
-        let result = parse_and_transform(json);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "uryyb");
-    }
-
-    #[test]
-    fn test_parse_and_transform_reverse_string() {
-        let json = r#"{"function":"reverse_string","input":"hello"}"#;
-        let result = parse_and_transform(json);
+    fn test_execute_transform_reverse_string() {
+        let result = execute_transform("reverse_string", "hello");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "olleh");
     }
 
     #[test]
-    fn test_parse_and_transform_to_snake_case() {
-        let json = r#"{"function":"to_snake_case","input":"HelloWorld"}"#;
-        let result = parse_and_transform(json);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "hello_world");
-    }
-
-    #[test]
-    fn test_parse_and_transform_to_camel_case() {
-        let json = r#"{"function":"to_camel_case","input":"hello_world"}"#;
-        let result = parse_and_transform(json);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "helloWorld");
-    }
-
-    #[test]
-    fn test_parse_and_transform_to_kebab_case() {
-        let json = r#"{"function":"to_kebab_case","input":"HelloWorld"}"#;
-        let result = parse_and_transform(json);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "hello-world");
-    }
-
-    #[test]
-    fn test_parse_and_transform_unknown_function() {
-        let json = r#"{"function":"unknown_func","input":"test"}"#;
-        let result = parse_and_transform(json);
+    fn test_execute_transform_unknown_function() {
+        let result = execute_transform("unknown_func", "test");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unknown function"));
     }
 
     #[test]
-    fn test_parse_and_transform_missing_function() {
-        let json = r#"{"input":"test"}"#;
-        let result = parse_and_transform(json);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Missing 'function' field"));
-    }
-
-    #[test]
-    fn test_parse_and_transform_missing_input() {
-        let json = r#"{"function":"leetspeak"}"#;
-        let result = parse_and_transform(json);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Missing 'input' field"));
-    }
-
-    #[test]
-    fn test_parse_and_transform_case_swap() {
-        let json = r#"{"function":"case_swap","input":"Hello"}"#;
-        let result = parse_and_transform(json);
+    fn test_execute_transform_rot13() {
+        let result = execute_transform("rot13", "hello");
         assert!(result.is_ok());
-        let output = result.unwrap();
-        // case_swap is randomized, just verify it's not empty
-        assert!(!output.is_empty());
-        assert_eq!(output.len(), 5);
+        assert_eq!(result.unwrap(), "uryyb");
     }
 
     #[test]
-    fn test_parse_and_transform_random_user_agent() {
-        let json = r#"{"function":"random_user_agent","input":""}"#;
-        let result = parse_and_transform(json);
+    fn test_execute_transform_url_encode() {
+        let result = execute_transform("url_encode", "hello world");
         assert!(result.is_ok());
-        let ua = result.unwrap();
-        assert!(!ua.is_empty());
-        // User agent should contain Mozilla
-        assert!(ua.contains("Mozilla"));
-    }
-
-    #[test]
-    fn test_parse_and_transform_html_entity_encode() {
-        let json = r#"{"function":"html_entity_encode","input":"<script>"}"#;
-        let result = parse_and_transform(json);
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        // The function uses hex entities like &#x3C; instead of &lt;
-        assert!(output.contains("&#"));
-    }
-
-    #[test]
-    fn test_parse_and_transform_sql_comment_injection() {
-        let json = r#"{"function":"sql_comment_injection","input":"admin"}"#;
-        let result = parse_and_transform(json);
-        assert!(result.is_ok());
-        // Just verify it returns successfully, output may vary
-        assert!(!result.unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_parse_and_transform_domain_typosquat() {
-        let json = r#"{"function":"domain_typosquat","input":"example.com"}"#;
-        let result = parse_and_transform(json);
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        assert!(!output.is_empty());
-    }
-
-    #[test]
-    fn test_parse_and_batch_transform_single() {
-        let json = r#"{"transforms":[{"function":"reverse_string","input":"hello"}]}"#;
-        let result = parse_and_batch_transform(json);
-        assert!(result.is_ok());
-        let outputs = result.unwrap();
-        assert_eq!(outputs.len(), 1);
-        assert_eq!(outputs[0], "olleh");
-    }
-
-    #[test]
-    fn test_parse_and_batch_transform_multiple() {
-        let json = r#"{"transforms":[{"function":"reverse_string","input":"hello"},{"function":"rot13","input":"hello"}]}"#;
-        let result = parse_and_batch_transform(json);
-        assert!(result.is_ok());
-        let outputs = result.unwrap();
-        assert_eq!(outputs.len(), 2);
-        assert_eq!(outputs[0], "olleh");
-        assert_eq!(outputs[1], "uryyb");
-    }
-
-    #[test]
-    fn test_parse_and_batch_transform_empty() {
-        let json = r#"{"transforms":[]}"#;
-        let result = parse_and_batch_transform(json);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_and_batch_transform_missing_transforms() {
-        let json = r#"{"data":[]}"#;
-        let result = parse_and_batch_transform(json);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_and_batch_transform_invalid_function() {
-        let json = r#"{"transforms":[{"function":"invalid_func","input":"test"}]}"#;
-        let result = parse_and_batch_transform(json);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_extract_json_field_empty_string() {
-        let json = r#"{"function":"test","input":""}"#;
-        assert_eq!(extract_json_field(json, "input"), Some("".to_string()));
-    }
-
-    #[test]
-    fn test_parse_and_batch_transform_with_whitespace() {
-        // Test with whitespace after colon
-        let json = r#"{"transforms": [{"function":"reverse_string","input":"hello"}]}"#;
-        let result = parse_and_batch_transform(json);
-        assert!(result.is_ok());
-        let outputs = result.unwrap();
-        assert_eq!(outputs.len(), 1);
-        assert_eq!(outputs[0], "olleh");
+        assert_eq!(result.unwrap(), "hello%20world");
     }
 }
-

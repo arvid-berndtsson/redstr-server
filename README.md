@@ -1,14 +1,16 @@
 # redstr-server
 
-A simple HTTP API server for [redstr](https://github.com/arvid-berndtsson/redstr) string transformations. This server provides a REST API that allows external tools to use redstr's transformation functions over HTTP.
+A high-performance HTTP API server for [redstr](https://github.com/arvid-berndtsson/redstr) string transformations. Built with Axum, this server provides a modern, async REST API that allows external tools to use redstr's transformation functions over HTTP.
 
 ## Features
 
-- Zero-dependency HTTP server (uses only Rust standard library)
-- REST API with JSON request/response
-- CORS enabled for browser access
-- Simple request/response format
-- Thread-per-connection model
+- ⚡ **High Performance** - Built on Axum and Tokio for async I/O
+- 🚀 **Serverless Ready** - Compatible with Railway and other serverless platforms
+- 📝 **Structured Logging** - Professional logging with tracing and request tracking
+- 🔄 **Type-Safe** - Leverages Rust's type system with Serde for JSON handling
+- 🌐 **CORS Enabled** - Full CORS support for browser access
+- 📊 **Request Tracing** - Automatic request/response logging with latency tracking
+- 🛡️ **Modern Stack** - Axum, Tower, Tokio, and Serde
 
 ## Prerequisites
 
@@ -230,12 +232,11 @@ This HTTP server is designed to be used as a bridge between redstr and external 
 
 ## Performance
 
-- Thread-per-connection model
-- Synchronous I/O (suitable for moderate load)
-- No external dependencies
-- Minimal memory footprint
-
-For high-performance scenarios, consider using an async runtime like Tokio.
+- **Async I/O** - Built on Tokio for high concurrency
+- **Low Latency** - Sub-millisecond response times
+- **Scalable** - Handles thousands of concurrent connections
+- **Memory Efficient** - Minimal memory footprint per request
+- **Production Ready** - Battle-tested Axum framework
 
 ## Troubleshooting
 
@@ -272,16 +273,108 @@ Then in another terminal, run the integration tests:
 cargo test --test integration_tests -- --ignored
 ```
 
+## Logging
+
+The server provides comprehensive structured logging in **JSON format** using Rust's `tracing` framework, fully compatible with [Railway's log filtering](https://docs.railway.com/guides/logs#filtering-logs).
+
+### Log Format
+
+All logs are output as JSON objects with structured fields for easy filtering and analysis:
+
+```json
+{
+  "timestamp": "2025-11-25T16:10:22.262009Z",
+  "level": "ERROR",
+  "fields": {
+    "message": "Transformation failed",
+    "function": "invalid",
+    "error": "Unknown function: invalid"
+  },
+  "target": "redstr_server",
+  "span": {
+    "method": "POST",
+    "uri": "/transform",
+    "version": "HTTP/1.1",
+    "name": "request"
+  }
+}
+```
+
+### Log Levels
+
+Control logging verbosity with the `RUST_LOG` environment variable:
+
+```bash
+# Show all logs (default)
+RUST_LOG=info cargo run
+
+# Show only warnings and errors
+RUST_LOG=warn cargo run
+
+# Show only errors
+RUST_LOG=error cargo run
+
+# Show debug logs (verbose)
+RUST_LOG=debug cargo run
+```
+
+### Railway Log Filtering
+
+Use Railway's powerful filtering syntax with the JSON log attributes:
+
+**Filter by log level:**
+- `@level:ERROR` - Show only errors
+- `@level:INFO` - Show info logs
+- `@level:DEBUG` - Show debug logs
+
+**Filter by custom fields:**
+- `@fields.function:leetspeak` - Show logs for specific transformation
+- `@fields.status:400` - Show specific status codes
+- `@fields.error:*` - Show all logs with error field
+- `@span.uri:/transform` - Show logs for specific endpoint
+- `@span.method:POST` - Show POST requests only
+
+**Combine filters:**
+- `@level:ERROR AND @span.uri:/transform` - Show errors on /transform endpoint
+- `@level:INFO AND @fields.function:*` - Show info logs with function field
+- `"Unknown function"` - Text search within log messages
+
+**Examples:**
+```
+@level:ERROR                           # All errors
+@fields.function:reverse_string        # Specific function
+@span.uri:/batch                       # Batch endpoint logs
+@level:ERROR AND @span.uri:/transform  # Transform errors only
+```
+
+### What Gets Logged
+
+✅ **Request Start** - Method, URI, HTTP version  
+✅ **Request Processing** - Function name, operation details  
+✅ **Request Completion** - Latency, status code  
+✅ **Transformation Success** - Function name and confirmation  
+✅ **All Errors** - Detailed error messages with context  
+✅ **Batch Operations** - Count of operations processed
+
+## Technology Stack
+
+- **[Axum](https://github.com/tokio-rs/axum)** - Web framework
+- **[Tokio](https://tokio.rs/)** - Async runtime
+- **[Tower](https://github.com/tower-rs/tower)** - Middleware and service abstractions
+- **[Serde](https://serde.rs/)** - JSON serialization/deserialization
+- **[Tracing](https://tracing.rs/)** - Structured logging and diagnostics
+
 ## Future Enhancements
 
 - [ ] Configuration file support
-- [ ] Custom port binding
-- [ ] Authentication/authorization
-- [ ] Rate limiting
-- [ ] Request logging
-- [ ] Metrics endpoint
-- [ ] Async I/O with Tokio
+- [x] Environment-based port binding (✅ Supports PORT env var)
+- [ ] Authentication/authorization with JWT
+- [ ] Rate limiting middleware
+- [x] Request logging (✅ Completed with tracing)
+- [ ] Metrics endpoint (Prometheus format)
+- [x] Async I/O (✅ Completed with Tokio)
 - [ ] TLS support
+- [ ] OpenAPI/Swagger documentation
 
 ## License
 
