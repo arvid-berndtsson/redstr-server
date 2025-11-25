@@ -1,14 +1,16 @@
 # redstr-server
 
-A simple HTTP API server for [redstr](https://github.com/arvid-berndtsson/redstr) string transformations. This server provides a REST API that allows external tools to use redstr's transformation functions over HTTP.
+A high-performance HTTP API server for [redstr](https://github.com/arvid-berndtsson/redstr) string transformations. Built with Axum, this server provides a modern, async REST API that allows external tools to use redstr's transformation functions over HTTP.
 
 ## Features
 
-- Zero-dependency HTTP server (uses only Rust standard library)
-- REST API with JSON request/response
-- CORS enabled for browser access
-- Simple request/response format
-- Thread-per-connection model
+- ⚡ **High Performance** - Built on Axum and Tokio for async I/O
+- 🚀 **Serverless Ready** - Compatible with Railway and other serverless platforms
+- 📝 **Structured Logging** - Professional logging with tracing and request tracking
+- 🔄 **Type-Safe** - Leverages Rust's type system with Serde for JSON handling
+- 🌐 **CORS Enabled** - Full CORS support for browser access
+- 📊 **Request Tracing** - Automatic request/response logging with latency tracking
+- 🛡️ **Modern Stack** - Axum, Tower, Tokio, and Serde
 
 ## Prerequisites
 
@@ -230,12 +232,11 @@ This HTTP server is designed to be used as a bridge between redstr and external 
 
 ## Performance
 
-- Thread-per-connection model
-- Synchronous I/O (suitable for moderate load)
-- No external dependencies
-- Minimal memory footprint
-
-For high-performance scenarios, consider using an async runtime like Tokio.
+- **Async I/O** - Built on Tokio for high concurrency
+- **Low Latency** - Sub-millisecond response times
+- **Scalable** - Handles thousands of concurrent connections
+- **Memory Efficient** - Minimal memory footprint per request
+- **Production Ready** - Battle-tested Axum framework
 
 ## Troubleshooting
 
@@ -274,66 +275,73 @@ cargo test --test integration_tests -- --ignored
 
 ## Logging
 
-The server provides comprehensive structured logging for all requests and operations, making it easy to monitor, debug, and troubleshoot.
+The server provides comprehensive structured logging using Rust's `tracing` framework with automatic request tracking and performance metrics.
 
-### Log Format
+### Log Levels
 
-All logs use a structured key-value format that's compatible with Railway and other log aggregation platforms:
+Control logging verbosity with the `RUST_LOG` environment variable:
+
+```bash
+# Show all logs (default)
+RUST_LOG=info cargo run
+
+# Show only warnings and errors
+RUST_LOG=warn cargo run
+
+# Show only errors
+RUST_LOG=error cargo run
+
+# Show debug logs (verbose)
+RUST_LOG=debug cargo run
+```
+
+### Example Logs
 
 ```
-[timestamp] level=<level> type=<type> method=<method> path=<path> client=<client> [additional fields]
-```
-
-**Log Levels:**
-- `info` - Normal operations (requests, successful responses)
-- `warn` - Warning conditions (4xx responses)
-- `error` - Error conditions (errors during processing)
-
-**Log Types:**
-- `request` - Incoming HTTP request
-- `success` - Successful operation
-- `error` - Error condition
-- `response` - HTTP response sent
-
-**Example logs:**
-```
-[1764085626906] level=info type=request method=GET path=/health client=127.0.0.1:34520
-[1764085626911] level=info type=success method=POST path=/transform client=127.0.0.1:34522 message="Transformation successful"
-[1764085626916] level=error type=error method=POST path=/transform client=127.0.0.1:34534 error="Transformation failed: Unknown function: invalid"
-[1764085626916] level=warn type=response method=POST path=/transform client=127.0.0.1:34534 status=400
+2025-11-25T15:55:19.161221Z DEBUG request{method=POST uri=/transform version=HTTP/1.1}: tower_http::trace::on_request: started processing request
+2025-11-25T15:55:19.161345Z  INFO request{method=POST uri=/transform version=HTTP/1.1}: redstr_server: Processing transformation request function=reverse_string
+2025-11-25T15:55:19.161389Z  INFO request{method=POST uri=/transform version=HTTP/1.1}: redstr_server: Transformation successful function=reverse_string
+2025-11-25T15:55:19.161443Z DEBUG request{method=POST uri=/transform version=HTTP/1.1}: tower_http::trace::on_response: finished processing request latency=0 ms status=200
 ```
 
 ### Filtering Logs in Railway
 
-Use these filters to find specific logs in Railway:
+Railway automatically integrates with Rust's tracing output. Search for:
 
-- `level=error` - Show only errors
-- `level=warn OR level=error` - Show warnings and errors
-- `type=request` - Show all incoming requests
-- `path=/transform` - Show logs for specific endpoint
+- `ERROR` - Show only errors
 - `status=400` - Show specific status codes
+- `uri=/transform` - Show logs for specific endpoint
+- `function=leetspeak` - Show logs for specific transformation
 - `"Unknown function"` - Search for specific error messages
-- `client=127.0.0.1` - Filter by client IP
 
 ### What Gets Logged
 
-✅ **All incoming requests** - Method, path, and client IP
-✅ **All responses** - Status code and endpoint
-✅ **Successful transformations** - Confirmation messages
-✅ **All errors** - Detailed error messages with context
-✅ **Connection failures** - TCP connection issues
-✅ **Stream errors** - I/O operation failures
+✅ **Request Start** - Method, URI, HTTP version
+✅ **Request Processing** - Function name, operation details
+✅ **Request Completion** - Latency, status code
+✅ **Transformation Success** - Function name and confirmation
+✅ **All Errors** - Detailed error messages with context
+✅ **Batch Operations** - Count of operations processed
+
+## Technology Stack
+
+- **[Axum](https://github.com/tokio-rs/axum)** - Web framework
+- **[Tokio](https://tokio.rs/)** - Async runtime
+- **[Tower](https://github.com/tower-rs/tower)** - Middleware and service abstractions
+- **[Serde](https://serde.rs/)** - JSON serialization/deserialization
+- **[Tracing](https://tracing.rs/)** - Structured logging and diagnostics
 
 ## Future Enhancements
 
 - [ ] Configuration file support
-- [ ] Custom port binding
-- [ ] Authentication/authorization
-- [ ] Rate limiting
-- [x] Request logging (✅ Completed)
-- [ ] Metrics endpoint
-- [ ] Async I/O with Tokio
+- [x] Environment-based port binding (✅ Supports PORT env var)
+- [ ] Authentication/authorization with JWT
+- [ ] Rate limiting middleware
+- [x] Request logging (✅ Completed with tracing)
+- [ ] Metrics endpoint (Prometheus format)
+- [x] Async I/O (✅ Completed with Tokio)
 - [ ] TLS support
+- [ ] OpenAPI/Swagger documentation
 
 ## License
 
