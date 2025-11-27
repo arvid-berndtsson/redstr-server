@@ -90,7 +90,7 @@ List all available transformation functions.
 ```json
 {
   "functions": ["leetspeak", "base64_encode", "url_encode", ...],
-  "count": 62
+  "count": 66
 }
 ```
 

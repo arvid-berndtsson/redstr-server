@@ -149,10 +149,10 @@ async fn version_handler() -> Json<VersionResponse> {
 async fn functions_handler() -> Json<FunctionsResponse> {
     let functions = vec![
         // Case transformations
-        "randomize_capitalization", "leetspeak", "alternate_case", "case_swap",
+        "randomize_capitalization", "leetspeak", "alternate_case", "case_swap", "inverse_case",
         "to_camel_case", "to_snake_case", "to_kebab_case",
         // Encoding
-        "base64_encode", "url_encode", "hex_encode", "html_entity_encode", "mixed_encoding",
+        "base64_encode", "url_encode", "hex_encode", "hex_encode_mixed", "html_entity_encode", "mixed_encoding",
         // Injection
         "sql_comment_injection", "xss_tag_variations", "command_injection", "path_traversal",
         "null_byte_injection", "mongodb_injection", "couchdb_injection", "dynamodb_obfuscate",
@@ -251,6 +251,7 @@ fn execute_transform(function: &str, input: &str) -> Result<String, String> {
         "leetspeak" => redstr::leetspeak(input),
         "alternate_case" => redstr::alternate_case(input),
         "case_swap" => redstr::case_swap(input),
+        "inverse_case" => redstr::inverse_case(input),
         "to_camel_case" => redstr::to_camel_case(input),
         "to_snake_case" => redstr::to_snake_case(input),
         "to_kebab_case" => redstr::to_kebab_case(input),
@@ -259,6 +260,7 @@ fn execute_transform(function: &str, input: &str) -> Result<String, String> {
         "base64_encode" => redstr::base64_encode(input),
         "url_encode" => redstr::url_encode(input),
         "hex_encode" => redstr::hex_encode(input),
+        "hex_encode_mixed" => redstr::hex_encode_mixed(input),
         "html_entity_encode" => redstr::html_entity_encode(input),
         "mixed_encoding" => redstr::mixed_encoding(input),
         
@@ -382,5 +384,22 @@ mod tests {
         let result = execute_transform("url_encode", "hello world");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "hello%20world");
+    }
+
+    #[test]
+    fn test_execute_transform_inverse_case() {
+        let result = execute_transform("inverse_case", "Hello World");
+        assert!(result.is_ok());
+        // inverse_case should swap the case of each character
+        assert_eq!(result.unwrap(), "hELLO wORLD");
+    }
+
+    #[test]
+    fn test_execute_transform_hex_encode_mixed() {
+        let result = execute_transform("hex_encode_mixed", "test");
+        assert!(result.is_ok());
+        // hex_encode_mixed should encode some characters as hex
+        let output = result.unwrap();
+        assert!(output.len() > 4); // Should be longer than original due to hex encoding
     }
 }
