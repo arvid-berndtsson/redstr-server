@@ -169,7 +169,9 @@ async fn functions_handler() -> Json<FunctionsResponse> {
         "font_fingerprint_consistency",
         // Web Security
         "http_header_variation", "api_endpoint_variation", "graphql_obfuscate", "graphql_variable_injection",
-        "graphql_introspection_bypass", "session_token_variation", "jwt_header_manipulation",
+        "graphql_introspection_bypass", "html_form_action_variation", "html_form_field_obfuscate",
+        "html_input_attribute_variation", "html_input_type_variation", "html_input_value_obfuscate",
+        "session_token_variation", "jwt_header_manipulation",
         "jwt_payload_obfuscate", "jwt_algorithm_confusion", "jwt_signature_bypass",
         // Shell
         "bash_obfuscate", "powershell_obfuscate", "env_var_obfuscate", "file_path_obfuscate",
@@ -323,6 +325,11 @@ fn execute_transform(function: &str, input: &str) -> Result<String, String> {
         "graphql_obfuscate" => redstr::graphql_obfuscate(input),
         "graphql_variable_injection" => redstr::graphql_variable_injection(input),
         "graphql_introspection_bypass" => redstr::graphql_introspection_bypass(input),
+        "html_form_action_variation" => redstr::html_form_action_variation(input),
+        "html_form_field_obfuscate" => redstr::html_form_field_obfuscate(input),
+        "html_input_attribute_variation" => redstr::html_input_attribute_variation(input),
+        "html_input_type_variation" => redstr::html_input_type_variation(input),
+        "html_input_value_obfuscate" => redstr::html_input_value_obfuscate(input),
         "session_token_variation" => redstr::session_token_variation(input),
         "jwt_header_manipulation" => redstr::jwt_header_manipulation(input),
         "jwt_payload_obfuscate" => redstr::jwt_payload_obfuscate(input),

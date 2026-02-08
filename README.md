@@ -53,7 +53,7 @@ Returns server information and available endpoints.
 ```json
 {
   "service": "redstr",
-  "version": "0.2.0",
+  "version": "<redstr-version>",
   "endpoints": ["/transform", "/batch", "/functions", "/health", "/version"]
 }
 ```
@@ -77,8 +77,8 @@ Get detailed version information.
 ```json
 {
   "service": "redstr-server",
-  "version": "0.1.0",
-  "redstr_version": "0.2.0"
+  "version": "<server-version>",
+  "redstr_version": "<redstr-version>"
 }
 ```
 
@@ -90,7 +90,7 @@ List all available transformation functions.
 ```json
 {
   "functions": ["leetspeak", "base64_encode", "url_encode", ...],
-  "count": 66
+  "count": "<function-count>"
 }
 ```
 
@@ -383,4 +383,3 @@ MIT License - See LICENSE file in the repository root.
 ---
 
 **Important:** This server is designed for authorized security testing only. Users must obtain proper authorization before conducting any security assessments.
-
