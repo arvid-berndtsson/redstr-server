@@ -7,22 +7,23 @@ use std::time::Duration;
 fn send_post_request(path: &str, body: &str) -> String {
     // Give server time to start if needed
     thread::sleep(Duration::from_millis(100));
-    
-    let mut stream = TcpStream::connect("127.0.0.1:8080")
-        .expect("Failed to connect to server");
-    
+
+    let mut stream = TcpStream::connect("127.0.0.1:8080").expect("Failed to connect to server");
+
     let request = format!(
         "POST {} HTTP/1.1\r\nHost: localhost:8080\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
         path, body.len(), body
     );
-    
-    stream.write_all(request.as_bytes())
+
+    stream
+        .write_all(request.as_bytes())
         .expect("Failed to write to stream");
-    
+
     let mut buffer = vec![0u8; 4096];
-    let size = stream.read(&mut buffer)
+    let size = stream
+        .read(&mut buffer)
         .expect("Failed to read from stream");
-    
+
     String::from_utf8_lossy(&buffer[..size]).to_string()
 }
 
@@ -30,22 +31,20 @@ fn send_post_request(path: &str, body: &str) -> String {
 fn send_get_request(path: &str) -> String {
     // Give server time to start if needed
     thread::sleep(Duration::from_millis(100));
-    
-    let mut stream = TcpStream::connect("127.0.0.1:8080")
-        .expect("Failed to connect to server");
-    
-    let request = format!(
-        "GET {} HTTP/1.1\r\nHost: localhost:8080\r\n\r\n",
-        path
-    );
-    
-    stream.write_all(request.as_bytes())
+
+    let mut stream = TcpStream::connect("127.0.0.1:8080").expect("Failed to connect to server");
+
+    let request = format!("GET {} HTTP/1.1\r\nHost: localhost:8080\r\n\r\n", path);
+
+    stream
+        .write_all(request.as_bytes())
         .expect("Failed to write to stream");
-    
+
     let mut buffer = vec![0u8; 4096];
-    let size = stream.read(&mut buffer)
+    let size = stream
+        .read(&mut buffer)
         .expect("Failed to read from stream");
-    
+
     String::from_utf8_lossy(&buffer[..size]).to_string()
 }
 
@@ -74,7 +73,7 @@ fn test_root_endpoint() {
     assert!(response.contains("200 OK"));
     let body = extract_body(&response);
     assert!(body.contains(r#""service":"redstr""#));
-    assert!(body.contains(r#""version":"0.2.0""#));
+    assert!(body.contains(r#""version":"#));
     assert!(body.contains(r#""endpoints""#));
 }
 
@@ -192,14 +191,22 @@ fn test_transform_case_transformations() {
         ("to_kebab_case", "HelloWorld", "hello-world"),
         ("case_swap", "Hello", "hELLO"),
     ];
-    
+
     for (function, input, expected) in test_cases {
         let body = format!(r#"{{"function":"{}","input":"{}"}}"#, function, input);
         let response = send_post_request("/transform", &body);
-        assert!(response.contains("200 OK"), "Failed for function: {}", function);
+        assert!(
+            response.contains("200 OK"),
+            "Failed for function: {}",
+            function
+        );
         let response_body = extract_body(&response);
-        assert!(response_body.contains(&format!(r#""output":"{}""#, expected)), 
-                "Failed for function: {}, expected: {}", function, expected);
+        assert!(
+            response_body.contains(&format!(r#""output":"{}""#, expected)),
+            "Failed for function: {}, expected: {}",
+            function,
+            expected
+        );
     }
 }
 
@@ -247,6 +254,13 @@ fn test_functions_endpoint() {
     assert!(body.contains("leetspeak"));
     assert!(body.contains("base64_encode"));
     assert!(body.contains("reverse_string"));
+    assert!(body.contains("inverse_case"));
+    assert!(body.contains("hex_encode_mixed"));
+    assert!(body.contains("html_form_action_variation"));
+    assert!(body.contains("html_form_field_obfuscate"));
+    assert!(body.contains("html_input_attribute_variation"));
+    assert!(body.contains("html_input_type_variation"));
+    assert!(body.contains("html_input_value_obfuscate"));
 }
 
 #[test]
@@ -256,8 +270,8 @@ fn test_version_endpoint() {
     assert!(response.contains("200 OK"));
     let body = extract_body(&response);
     assert!(body.contains(r#""service":"redstr-server""#));
-    assert!(body.contains(r#""version":"0.1.0""#));
-    assert!(body.contains(r#""redstr_version":"0.2.0""#));
+    assert!(body.contains(&format!(r#""version":"{}""#, env!("CARGO_PKG_VERSION"))));
+    assert!(body.contains(r#""redstr_version":"#));
 }
 
 #[test]
