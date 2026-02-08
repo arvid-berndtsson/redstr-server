@@ -381,13 +381,13 @@ dependencies = [
 
 [[package]]
 name = "redstr"
-version = "0.2.2"
+version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d7a4e1a13a692e99988751991e9c3349c5363c8b198785e65ce2d2a375f0707"
+checksum = "cc9da2e3ac92e266641c80968748a61eef18bfe5b1d45740e7a1655815027587"
 
 [[package]]
 name = "redstr-server"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "axum",
  "redstr",
